@@ -11,7 +11,7 @@ Pod::Spec.new do |s|
     analytics, no device identifiers.
   DESC
 
-  s.homepage         = 'https://github.com/keyda-in/keyda-business-sdks'
+  s.homepage         = 'https://github.com/KeydaAI/keyda-business-sdks'
   # Resolved against the pod root, which is the repository root for a git install and
   # this directory for a `:path` install — so a copy of the licence lives in both.
   s.license          = { :type => 'MIT', :file => 'LICENSE' }
@@ -19,7 +19,7 @@ Pod::Spec.new do |s|
 
   # The tag is prefixed because this is a monorepo: every platform SDK in it releases
   # on its own schedule and needs its own tags.
-  s.source           = { :git => 'https://github.com/keyda-in/keyda-business-sdks.git', :tag => "ios-v#{s.version}" }
+  s.source           = { :git => 'https://github.com/KeydaAI/keyda-business-sdks.git', :tag => "ios-v#{s.version}" }
 
   s.ios.deployment_target = '13.0'
   s.swift_versions   = ['5.9']

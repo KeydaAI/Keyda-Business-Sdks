@@ -26,13 +26,13 @@ SwiftPM requires `Package.swift` at the root of a repository, and this package l
 at the monorepo URL will not resolve:
 
 In Xcode: **File → Add Package Dependencies…** and enter
-`https://github.com/keyda-in/keyda-business-sdks`
+`https://github.com/KeydaAI/keyda-business-sdks`
 
 Or in a `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/keyda-in/keyda-business-sdks", from: "0.1.0")
+    .package(url: "https://github.com/KeydaAI/keyda-business-sdks", from: "0.1.0")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [.product(name: "KeydaBot", package: "keyda-bot-ios")])

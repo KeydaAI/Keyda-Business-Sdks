@@ -17,7 +17,7 @@ Pod::Spec.new do |s|
   s.homepage         = 'https://business.keyda.in'
   s.license          = { :type => 'MIT', :file => 'LICENSE' }
   s.author           = { 'Keyda' => 'support@keyda.in' }
-  s.source           = { :git => 'https://github.com/keyda-in/keyda-business-sdks.git',
+  s.source           = { :git => 'https://github.com/KeydaAI/keyda-business-sdks.git',
                          :tag => "v#{s.version}" }
   # Matches Package.swift, which points its target at the same directory —
   # the two must agree or a CocoaPods consumer gets a different set of files

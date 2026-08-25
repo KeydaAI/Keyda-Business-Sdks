@@ -22,11 +22,11 @@
   "homepage": "https://business.keyda.in",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/keyda-in/keyda-business-sdks.git",
+    "url": "git+https://github.com/KeydaAI/keyda-business-sdks.git",
     "directory": "react-native"
   },
   "bugs": {
-    "url": "https://github.com/keyda-in/keyda-business-sdks/issues"
+    "url": "https://github.com/KeydaAI/keyda-business-sdks/issues"
   },
   "peerDependencies": {
     "react": ">=18.0.0",
