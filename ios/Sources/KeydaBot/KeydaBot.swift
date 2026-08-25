@@ -44,7 +44,7 @@ public enum KeydaBot {
     ///   - baseUrl: override only for self-hosting or staging. Must match
     ///     `KeydaBotConfiguration.defaultBaseUrl` when omitted; the literal is repeated
     ///     here because a public default argument cannot reference an internal constant.
-    public static func initialize(clientId: String, baseUrl: String = "https://business.keyda.in") {
+    public static func initialize(clientId: String, baseUrl: String = "https://keyda.in/business") {
         do {
             configuration = try KeydaBotConfiguration(clientId: clientId, baseUrl: baseUrl)
         } catch {

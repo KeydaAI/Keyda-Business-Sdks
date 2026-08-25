@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name:       Keyda Bot
- * Plugin URI:        https://business.keyda.in/
+ * Plugin URI:        https://keyda.in/business/
  * Description:       Adds your Keyda Bot chat assistant to your site. Paste your client id under Settings &rarr; Keyda Bot; the greeting, colours and answers all come from your Keyda Business dashboard.
  * Version:           0.1.0
  * Requires at least: 5.6
@@ -35,7 +35,7 @@ define( 'KEYDA_BOT_OPTION', 'keyda_bot_client_id' );
 define( 'KEYDA_BOT_HANDLE', 'keyda-bot' );
 
 /** Where the widget is served from unless the site overrides it. */
-define( 'KEYDA_BOT_DEFAULT_BASE_URL', 'https://business.keyda.in' );
+define( 'KEYDA_BOT_DEFAULT_BASE_URL', 'https://keyda.in/business' );
 
 /**
  * Is this string a client id we would be willing to put on a live page?
@@ -92,7 +92,7 @@ function keyda_bot_base_url() {
 	/**
 	 * Filters the host the Keyda Bot widget is loaded from.
 	 *
-	 * @param string $base Base URL, no trailing slash. Default https://business.keyda.in.
+	 * @param string $base Base URL, no trailing slash. Default https://keyda.in/business.
 	 */
 	$base = (string) apply_filters( 'keyda_bot_base_url', $base );
 	$base = untrailingslashit( trim( $base ) );

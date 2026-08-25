@@ -58,7 +58,7 @@ wp plugin activate keyda-bot
 ```
 
 Then: **Settings → Keyda Bot**, paste the client id from the Install page of
-your dashboard at <https://business.keyda.in/app/>, save, and open the site in
+your dashboard at <https://keyda.in/business/app/>, save, and open the site in
 a new tab. An id must match `kb_live_` followed by 8–48 hex characters; anything
 else is rejected inline and never overwrites the id already saved, so a typo
 cannot take a live bot off a live site.
@@ -68,7 +68,7 @@ key is byte-for-byte the site it was before activation.
 
 ## Pointing it at another host
 
-The default is `https://business.keyda.in`. Staging and self-hosted installs
+The default is `https://keyda.in/business`. Staging and self-hosted installs
 override it, either in `wp-config.php`:
 
 ```php

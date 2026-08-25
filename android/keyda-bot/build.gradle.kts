@@ -89,7 +89,7 @@ publishing {
             pom {
                 name.set("Keyda Bot")
                 description.set("Opens a Keyda Business chat page in a full-screen WebView.")
-                url.set("https://business.keyda.in")
+                url.set("https://keyda.in/business")
                 licenses {
                     license {
                         name.set("MIT")

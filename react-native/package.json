@@ -19,7 +19,7 @@
     "react-native",
     "webview"
   ],
-  "homepage": "https://business.keyda.in",
+  "homepage": "https://keyda.in/business",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/KeydaAI/keyda-business-sdks.git",

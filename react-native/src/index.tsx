@@ -22,7 +22,7 @@ import {
 } from 'react-native';
 import {WebView} from 'react-native-webview';
 
-const DEFAULT_BASE_URL = 'https://business.keyda.in';
+const DEFAULT_BASE_URL = 'https://keyda.in/business';
 
 /** The shape the platform issues. Kept identical to the server's own check. */
 const CLIENT_ID = /^kb_live_[0-9a-f]{8,48}$/;
@@ -146,7 +146,7 @@ function openExternally(url: string): void {
 export interface KeydaBotProps {
   /** From Install in the Keyda Business dashboard: kb_live_ + 8-48 hex chars. */
   clientId: string;
-  /** Override for self-hosting or staging. Defaults to https://business.keyda.in */
+  /** Override for self-hosting or staging. Defaults to https://keyda.in/business */
   baseUrl?: string;
   /** Present the chat over the app. */
   visible: boolean;

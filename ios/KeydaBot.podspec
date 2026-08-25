@@ -5,7 +5,7 @@ Pod::Spec.new do |s|
 
   s.description      = <<-DESC
     A thin wrapper, not a native chat UI. KeydaBot presents a WKWebView pointed at
-    https://business.keyda.in/chat/<your client id>, which is the same hosted chat that
+    https://keyda.in/business/chat/<your client id>, which is the same hosted chat that
     runs on your website, so a change made in the dashboard is live in the app with no
     App Store release. Three calls: initialize, show, dismiss. No dependencies, no
     analytics, no device identifiers.

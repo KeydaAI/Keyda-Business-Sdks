@@ -1,6 +1,6 @@
 # @keyda/bot-react-native
 
-This package opens your Keyda bot's **hosted chat page** — `https://business.keyda.in/chat/<clientId>` — inside a React Native `Modal` and `WebView`. It is a wrapper. There is no native chat UI in here, and there is not going to be one.
+This package opens your Keyda bot's **hosted chat page** — `https://keyda.in/business/chat/<clientId>` — inside a React Native `Modal` and `WebView`. It is a wrapper. There is no native chat UI in here, and there is not going to be one.
 
 That is the deliberate trade. One chat renderer exists (the web widget the platform serves), so when you change your bot's welcome message, accent colour or knowledge in the dashboard, it is live in your app the next time someone opens the chat — no app release, no store review. What you give up is real, and it is listed under [Limitations](#limitations). Read that section before you ship.
 
@@ -50,8 +50,8 @@ That is the whole surface. There is no message API, no unread count and no user-
 
 | Prop | Type | |
 |---|---|---|
-| `clientId` | `string` | Required. From **Install** in the [dashboard](https://business.keyda.in/app/). |
-| `baseUrl` | `string?` | Defaults to `https://business.keyda.in`. |
+| `clientId` | `string` | Required. From **Install** in the [dashboard](https://keyda.in/business/app/). |
+| `baseUrl` | `string?` | Defaults to `https://keyda.in/business`. |
 | `visible` | `boolean` | Required. Presents the chat over your app. |
 | `onClose` | `() => void` | Required. Fired by the ✕ and by Android's back button. |
 

@@ -13,7 +13,7 @@ import { assertClientId, warn, widgetScriptUrl } from './config.js';
 export interface EmbedOptions {
   /** From Install in the Keyda Business dashboard: `kb_live_…`. */
   clientId: string;
-  /** Defaults to `https://business.keyda.in`. Set it for staging or a self-host. */
+  /** Defaults to `https://keyda.in/business`. Set it for staging or a self-host. */
   baseUrl?: string;
 }
 

@@ -20,7 +20,7 @@ WebView" after shipping has been misled; one who is told up front can decide.
 
     {baseUrl}/chat/{clientId}
 
-* `baseUrl` defaults to `https://business.keyda.in`
+* `baseUrl` defaults to `https://keyda.in/business`
 * it is overridable — self-hosting and staging both need it
 * `clientId` looks like `kb_live_` followed by 8–48 hex characters
 * an id that does not match that shape must fail loudly at init, not open a

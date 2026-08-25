@@ -16,7 +16,7 @@ struct KeydaBotConfiguration: Equatable {
     /// `KeydaBot.initialize(clientId:baseUrl:)` — a public function's default value
     /// cannot reference an internal constant, so the literal appears in both places.
     /// `KeydaBotConfigurationTests` pins this one.
-    static let defaultBaseUrl = "https://business.keyda.in"
+    static let defaultBaseUrl = "https://keyda.in/business"
 
     let clientId: String
     let chatURL: URL
@@ -105,8 +105,8 @@ struct KeydaBotConfiguration: Equatable {
     ///
     /// Host comparison is not enough, and the reason is specific: the chat
     /// page carries a real "Powered by Keyda" link, and on the default
-    /// deployment it points at `https://business.keyda.in/business/` — the
-    /// SAME host as `https://business.keyda.in/chat/{clientId}`. A same-host
+    /// deployment it points at `https://keyda.in/business/` — the
+    /// SAME host as `https://keyda.in/business/chat/{clientId}`. A same-host
     /// check therefore lets the marketing site load in place and replaces the
     /// customer's conversation with no way back; the widget re-greets on
     /// mount and persists nothing but a session id, so every message on
@@ -145,10 +145,10 @@ enum KeydaBotConfigurationError: Error, CustomStringConvertible {
         case .invalidClientId(let value):
             return "\"\(value)\" is not a Keyda client id. Expected kb_live_ followed by 8 to 48 "
                 + "lowercase hex characters, for example kb_live_3f9a2c81. Copy it from Install in "
-                + "the Keyda Business dashboard (https://business.keyda.in/app/)."
+                + "the Keyda Business dashboard (https://keyda.in/business/app/)."
         case .invalidBaseUrl(let value):
             return "\"\(value)\" is not a usable baseUrl. It must be an absolute http or https URL "
-                + "with a host, for example https://business.keyda.in."
+                + "with a host, for example https://keyda.in/business."
         }
     }
 }

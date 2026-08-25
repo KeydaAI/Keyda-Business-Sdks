@@ -1,7 +1,7 @@
 # keyda_bot
 
 **This package is a WebView wrapper.** It opens one hosted page —
-`https://business.keyda.in/chat/{your-client-id}` — full-screen over your
+`https://keyda.in/business/chat/{your-client-id}` — full-screen over your
 Flutter app. There is no native Dart chat UI in here, and there will not be
 one.
 
@@ -43,7 +43,7 @@ Flutter web is out; desktop depends entirely on whether `webview_flutter`
 supports it, and nothing in this package has been tested there.
 
 Get your client id from **Install** in the
-[Keyda Business dashboard](https://business.keyda.in/app/). It looks like
+[Keyda Business dashboard](https://keyda.in/business/app/). It looks like
 `kb_live_` followed by 8–48 lowercase hex characters.
 
 ## Use
@@ -83,7 +83,7 @@ than one that is missing.
 
 ## baseUrl
 
-`init` defaults to `https://business.keyda.in`. Override it for staging or a
+`init` defaults to `https://keyda.in/business`. Override it for staging or a
 self-hosted install:
 
 ```dart

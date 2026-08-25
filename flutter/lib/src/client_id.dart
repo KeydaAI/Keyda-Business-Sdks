@@ -6,7 +6,7 @@
 library;
 
 /// Where the hosted chat lives unless the integrator says otherwise.
-const String kKeydaDefaultBaseUrl = 'https://business.keyda.in';
+const String kKeydaDefaultBaseUrl = 'https://keyda.in/business';
 
 /// `kb_live_` followed by 8-48 lowercase hex characters.
 ///
@@ -115,8 +115,8 @@ Uri buildChatUrl({
 ///
 ///     a.href = apiBase.replace('/api/business/v1', '') + '/business/';
 ///
-/// which on the default deployment is `https://business.keyda.in/business/` —
-/// the SAME origin as `https://business.keyda.in/chat/{clientId}`. An origin
+/// which on the default deployment is `https://keyda.in/business/` —
+/// the SAME origin as `https://keyda.in/business/chat/{clientId}`. An origin
 /// comparison therefore answers "yes, that is ours", the WebView navigates in
 /// place, and the customer's conversation is replaced by a marketing site with
 /// no route back. It does not recover: the widget re-greets on mount and

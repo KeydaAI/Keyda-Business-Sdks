@@ -1,6 +1,6 @@
 # Keyda Bot for Android
 
-`in.keyda:keyda-bot` opens `https://business.keyda.in/chat/<your client id>` in a full-screen
+`in.keyda:keyda-bot` opens `https://keyda.in/business/chat/<your client id>` in a full-screen
 WebView. That is the whole library, and this page is not going to pretend otherwise.
 
 There is exactly one Keyda chat interface, served by the platform, and every Keyda SDK loads that
@@ -59,7 +59,7 @@ KeydaBot.init(this, "kb_live_9f4c2a10");
 supportButton.setOnClickListener(v -> KeydaBot.show(this));
 ```
 
-Get the client id from **Install** in the [Keyda Business dashboard](https://business.keyda.in/app/).
+Get the client id from **Install** in the [Keyda Business dashboard](https://keyda.in/business/app/).
 
 ### `in` is a Kotlin keyword
 
@@ -71,7 +71,7 @@ writes the backticks for you when it auto-imports.
 
 | Call | Does |
 |---|---|
-| `KeydaBot.init(context, clientId, baseUrl = "https://business.keyda.in")` | stores and validates the configuration |
+| `KeydaBot.init(context, clientId, baseUrl = "https://keyda.in/business")` | stores and validates the configuration |
 | `KeydaBot.show(activity)` | opens the chat over your app |
 | `KeydaBot.dismiss()` | closes it; safe when it is not open, safe from any thread |
 | `KeydaBot.isShowing` | whether the chat is on screen right now |

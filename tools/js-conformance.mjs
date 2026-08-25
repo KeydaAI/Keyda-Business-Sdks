@@ -58,9 +58,9 @@ const ID_CASES = [
   [`${GOOD}\n`, false], [` ${GOOD}`, false], [null, false], [undefined, false],
 ];
 const URL_CASES = [
-  [undefined, `https://business.keyda.in/chat/${GOOD}`],
-  ['https://business.keyda.in', `https://business.keyda.in/chat/${GOOD}`],
-  ['https://business.keyda.in/', `https://business.keyda.in/chat/${GOOD}`],
+  [undefined, `https://keyda.in/business/chat/${GOOD}`],
+  ['https://keyda.in/business', `https://keyda.in/business/chat/${GOOD}`],
+  ['https://keyda.in/business/', `https://keyda.in/business/chat/${GOOD}`],
   ['https://keyda.in/business', `https://keyda.in/business/chat/${GOOD}`],
   ['https://keyda.in/business/', `https://keyda.in/business/chat/${GOOD}`],
 ];

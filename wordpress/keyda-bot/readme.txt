@@ -58,7 +58,7 @@ launcher appears and tells visitors the chat is not available right now.
 This plugin loads a script from Keyda and the bot answers from Keyda's API, so
 some data leaves the visitor's browser. Nothing leaves your server.
 
-The script is loaded from `https://business.keyda.in/widget.js` (or from
+The script is loaded from `https://keyda.in/business/widget.js` (or from
 whichever host you configure — see the FAQ). Once running, the visitor's browser
 makes three kinds of request to that same host:
 
@@ -91,7 +91,7 @@ If the field is empty, the plugin adds nothing at all to your pages.
 
 = Where do I find my client id? =
 
-In the Keyda Business dashboard at https://business.keyda.in/app/, on the
+In the Keyda Business dashboard at https://keyda.in/business/app/, on the
 Install page. Copy the id itself, not the whole script tag.
 
 = It says my client id was not saved. =

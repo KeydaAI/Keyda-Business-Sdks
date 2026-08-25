@@ -6,7 +6,7 @@ package, no plugin, no native build step:
 
 ```html
 <!-- src/index.html, before </body> -->
-<script src="https://business.keyda.in/widget.js"
+<script src="https://keyda.in/business/widget.js"
         data-key="kb_live_YOUR_CLIENT_ID" async></script>
 ```
 
@@ -24,7 +24,7 @@ above, because that is still the right answer for most apps.
 Every Keyda SDK is a thin wrapper around one hosted chat page:
 
 ```
-{baseUrl}/chat/{clientId}      baseUrl defaults to https://business.keyda.in
+{baseUrl}/chat/{clientId}      baseUrl defaults to https://keyda.in/business
 ```
 
 There is no chat UI in this package. There is no native code in it either. The
@@ -60,7 +60,7 @@ your own code imports `@capacitor/browser`, which registers its web
 implementation.)
 
 Get your client id from **Install** in the
-[Keyda Business dashboard](https://business.keyda.in/app/).
+[Keyda Business dashboard](https://keyda.in/business/app/).
 
 ## Option 1: embedded (recommended)
 

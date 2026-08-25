@@ -54,18 +54,18 @@ final class KeydaBotConfigurationTests: XCTestCase {
     func testDefaultBaseUrlMatchesTheContract() {
         // Repeated as a literal in KeydaBot.initialize's default argument; if this
         // changes, that changes.
-        XCTAssertEqual(KeydaBotConfiguration.defaultBaseUrl, "https://business.keyda.in")
+        XCTAssertEqual(KeydaBotConfiguration.defaultBaseUrl, "https://keyda.in/business")
     }
 
     func testBuildsTheContractUrl() throws {
         let configuration = try KeydaBotConfiguration(clientId: "kb_live_3f9a2c81")
-        XCTAssertEqual(configuration.chatURL.absoluteString, "https://business.keyda.in/chat/kb_live_3f9a2c81")
+        XCTAssertEqual(configuration.chatURL.absoluteString, "https://keyda.in/business/chat/kb_live_3f9a2c81")
     }
 
     func testTrailingSlashesInBaseUrlAreDropped() throws {
-        for baseUrl in ["https://business.keyda.in/", "https://business.keyda.in///", "  https://business.keyda.in/  "] {
+        for baseUrl in ["https://keyda.in/business/", "https://keyda.in/business///", "  https://keyda.in/business/  "] {
             let configuration = try KeydaBotConfiguration(clientId: "kb_live_3f9a2c81", baseUrl: baseUrl)
-            XCTAssertEqual(configuration.chatURL.absoluteString, "https://business.keyda.in/chat/kb_live_3f9a2c81")
+            XCTAssertEqual(configuration.chatURL.absoluteString, "https://keyda.in/business/chat/kb_live_3f9a2c81")
         }
     }
 
@@ -80,7 +80,7 @@ final class KeydaBotConfigurationTests: XCTestCase {
     }
 
     func testRejectsBaseUrlsThatCannotBeLoadedOrHostChecked() {
-        for baseUrl in ["", "   ", "/", "business.keyda.in", "ftp://business.keyda.in", "file:///tmp", "https://"] {
+        for baseUrl in ["", "   ", "/", "keyda.in/business", "ftp://keyda.in/business", "file:///tmp", "https://"] {
             XCTAssertThrowsError(try KeydaBotConfiguration(clientId: "kb_live_3f9a2c81", baseUrl: baseUrl)) { error in
                 guard case KeydaBotConfigurationError.invalidBaseUrl = error else {
                     return XCTFail("expected .invalidBaseUrl for \(baseUrl), got \(error)")
@@ -118,7 +118,7 @@ final class KeydaBotConfigurationTests: XCTestCase {
 // comparison lets it load in place, and the customer's conversation is gone —
 // the widget re-greets on mount and keeps nothing but a session id.
 extension KeydaBotConfigurationTests {
-    private var chat: URL { URL(string: "https://business.keyda.in/chat/kb_live_835686cd7c9bf18b9f70c34f")! }
+    private var chat: URL { URL(string: "https://keyda.in/business/chat/kb_live_835686cd7c9bf18b9f70c34f")! }
 
     func testTheChatPageItselfStays() {
         XCTAssertTrue(KeydaBotConfiguration.staysInChat(chat, chatURL: chat))
@@ -134,19 +134,19 @@ extension KeydaBotConfigurationTests {
     func testTheSameHostMarketingSiteLeaves() {
         // The exact link the widget renders in its footer.
         XCTAssertFalse(KeydaBotConfiguration.staysInChat(
-            URL(string: "https://business.keyda.in/business/")!, chatURL: chat))
+            URL(string: "https://keyda.in/business/")!, chatURL: chat))
         XCTAssertFalse(KeydaBotConfiguration.staysInChat(
-            URL(string: "https://business.keyda.in/pricing")!, chatURL: chat))
+            URL(string: "https://keyda.in/business/pricing")!, chatURL: chat))
     }
 
     func testAnotherBotsChatLeaves() {
         XCTAssertFalse(KeydaBotConfiguration.staysInChat(
-            URL(string: "https://business.keyda.in/chat/kb_live_0000000000000000000000ff")!, chatURL: chat))
+            URL(string: "https://keyda.in/business/chat/kb_live_0000000000000000000000ff")!, chatURL: chat))
     }
 
     func testDifferentSchemeOrHostLeaves() {
         XCTAssertFalse(KeydaBotConfiguration.staysInChat(
-            URL(string: "http://business.keyda.in/chat/kb_live_835686cd7c9bf18b9f70c34f")!, chatURL: chat))
+            URL(string: "http://keyda.in/business/chat/kb_live_835686cd7c9bf18b9f70c34f")!, chatURL: chat))
         XCTAssertFalse(KeydaBotConfiguration.staysInChat(
             URL(string: "https://evil.example/chat/kb_live_835686cd7c9bf18b9f70c34f")!, chatURL: chat))
     }

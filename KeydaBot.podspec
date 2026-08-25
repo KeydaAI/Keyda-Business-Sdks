@@ -14,7 +14,7 @@ Pod::Spec.new do |s|
     A small WebView wrapper that opens your Keyda Business bot inside your app.
     You need only the public client id from your dashboard.
   DESC
-  s.homepage         = 'https://business.keyda.in'
+  s.homepage         = 'https://keyda.in/business'
   s.license          = { :type => 'MIT', :file => 'LICENSE' }
   s.author           = { 'Keyda' => 'support@keyda.in' }
   s.source           = { :git => 'https://github.com/KeydaAI/keyda-business-sdks.git',

@@ -1,7 +1,7 @@
 # KeydaBot — iOS
 
 **This is a WebView wrapper.** `KeydaBot` presents a sheet containing a `WKWebView`
-pointed at `https://business.keyda.in/chat/<your client id>`. The transcript, the
+pointed at `https://keyda.in/business/chat/<your client id>`. The transcript, the
 composer, the welcome message and the accent colour are all the hosted chat page — the
 same one that runs on your website. There is no native chat UI in this package, and
 saying so up front is the point: an integrator who finds that out after shipping has
@@ -65,13 +65,13 @@ the active window; pass one explicitly if you would rather choose:
 
 | Call | What it does |
 |---|---|
-| `initialize(clientId:baseUrl:)` | Stores the configuration and validates the client id. `baseUrl` defaults to `https://business.keyda.in`. |
+| `initialize(clientId:baseUrl:)` | Stores the configuration and validates the client id. `baseUrl` defaults to `https://keyda.in/business`. |
 | `show(from:)` | Presents the chat as a sheet. A second call while it is up does nothing. |
 | `dismiss()` | Closes it. Safe to call when nothing is showing. |
 | `isShowing` | Whether the chat is on screen right now, including after a swipe-down. |
 
 Your client id is under **Install** in the [Keyda Business
-dashboard](https://business.keyda.in/app/).
+dashboard](https://keyda.in/business/app/).
 
 ### A different host
 

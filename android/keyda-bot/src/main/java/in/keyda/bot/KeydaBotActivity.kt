@@ -337,7 +337,7 @@ class KeydaBotActivity : Activity() {
      *
      * The origin alone is not enough, and this is not hypothetical. The "Powered by Keyda" link
      * CONTRACT rule 2 is written about points at the marketing site on the SAME host the chat is
-     * served from (`business.keyda.in/chat/...` and `business.keyda.in/business/`). An origin-only
+     * served from (`keyda.in/business/chat/...` and `keyda.in/business/`). An origin-only
      * test calls that link "our own page", keeps it in the WebView, and the customer's
      * conversation is replaced by a marketing page. Coming back does not bring it back either -
      * the widget replays nothing on mount, so every message on screen is simply gone.

@@ -32,7 +32,7 @@ import java.lang.ref.WeakReference
 object KeydaBot {
 
     /** Where the chat is served from. Override in [init] for self-hosting or staging. */
-    const val DEFAULT_BASE_URL = "https://business.keyda.in"
+    const val DEFAULT_BASE_URL = "https://keyda.in/business"
 
     // Deliberately not `const`: a const is compiled into a public static field that Java callers
     // can see, and the public surface of this SDK is four calls and nothing else.

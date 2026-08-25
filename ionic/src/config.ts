@@ -8,7 +8,7 @@
  */
 
 /** Where the hosted chat page and `widget.js` are served from. */
-export const DEFAULT_BASE_URL = 'https://business.keyda.in';
+export const DEFAULT_BASE_URL = 'https://keyda.in/business';
 
 /**
  * `kb_live_` followed by 8-48 hex characters, per CONTRACT.md.
@@ -35,7 +35,7 @@ export function assertClientId(clientId: string): string {
     throw new Error(
       `[KeydaBot] "${String(clientId)}" is not a Keyda client id. Expected ` +
         `kb_live_ followed by 8-48 hex characters. Copy it from Install in ` +
-        `the Keyda Business dashboard: https://business.keyda.in/app/`,
+        `the Keyda Business dashboard: https://keyda.in/business/app/`,
     );
   }
   return clientId;
@@ -60,7 +60,7 @@ export function normaliseBaseUrl(baseUrl?: string): string {
   } catch {
     throw new Error(
       `[KeydaBot] baseUrl "${raw}" is not an absolute URL. Pass something ` +
-        `like "https://business.keyda.in", or omit it to use the default.`,
+        `like "https://keyda.in/business", or omit it to use the default.`,
     );
   }
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
