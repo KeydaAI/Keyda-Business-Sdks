@@ -1,0 +1,40 @@
+{
+  "name": "@keyda/bot-react-native",
+  "version": "0.1.0",
+  "description": "Open your Keyda Business bot in a React Native app: a Modal + WebView around the hosted chat page.",
+  "license": "MIT",
+  "main": "src/index.tsx",
+  "types": "src/index.tsx",
+  "react-native": "src/index.tsx",
+  "source": "src/index.tsx",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "keyda",
+    "chatbot",
+    "support",
+    "react-native",
+    "webview"
+  ],
+  "homepage": "https://business.keyda.in",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/keyda-in/keyda-business-sdks.git",
+    "directory": "react-native"
+  },
+  "bugs": {
+    "url": "https://github.com/keyda-in/keyda-business-sdks/issues"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-native": ">=0.70.0",
+    "react-native-webview": ">=13.0.0"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  // Second pass for the CommonJS entry point (package.json "main"). Same
+  // sources, different module format — declarations come from the ESM pass
+  // only, so there is exactly one set of .d.ts files to keep correct.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "outDir": "dist/cjs",
+    "declaration": false,
+    "declarationMap": false
+  }
+}

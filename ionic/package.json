@@ -1,0 +1,59 @@
+{
+  "name": "@keyda/bot-capacitor",
+  "version": "0.1.0",
+  "description": "Open your Keyda bot in an Ionic/Capacitor app: the plain widget script tag, or the hosted chat page as a full-screen surface.",
+  "license": "MIT",
+  "homepage": "https://business.keyda.in",
+  "keywords": [
+    "keyda",
+    "capacitor",
+    "ionic",
+    "cordova",
+    "chat",
+    "chatbot",
+    "support",
+    "widget"
+  ],
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "default": "./dist/esm/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/finalize.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "@capacitor/browser": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@capacitor/browser": {
+      "optional": true
+    }
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

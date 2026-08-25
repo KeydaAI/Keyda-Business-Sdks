@@ -1,0 +1,10 @@
+# JitPack builds from the repository root, and the Android Gradle build lives
+# in android/ — so without this it finds no build file and every consumer's
+# dependency resolution fails with a JitPack build log nobody reads.
+#
+# openjdk17 is not a preference: AGP 8 requires a JDK 17 to run, and JitPack's
+# default is older.
+jdk:
+  - openjdk17
+install:
+  - cd android && ./gradlew :keyda-bot:publishToMavenLocal

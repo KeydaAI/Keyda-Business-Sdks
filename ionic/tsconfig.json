@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    // ES2018 rather than something newer on purpose: `?.` and `??` are used
+    // throughout and Capacitor still supports iOS 13 / older Android System
+    // WebViews, where those are syntax errors. TypeScript downlevels them
+    // here so nobody has to discover that on a customer's phone.
+    "target": "ES2018",
+    "lib": ["ES2019", "DOM"],
+    "module": "ES2020",
+    "moduleResolution": "Node",
+    "outDir": "dist/esm",
+    "rootDir": "src",
+    "declaration": true,
+    // Ships alongside `src` (see package.json "files") so that stepping into
+    // this package in a debugger lands on the commented source, not on
+    // downlevelled output.
+    "declarationMap": true,
+    "sourceMap": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": false,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    // No `types` are pulled in: this package deliberately references the
+    // Capacitor bridge through `window` instead of importing
+    // @capacitor/browser, so an app that never installed it still compiles.
+    "types": []
+  },
+  "include": ["src"]
+}

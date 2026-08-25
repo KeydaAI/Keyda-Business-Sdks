@@ -1,0 +1,7 @@
+# package.json "files" is the whitelist that decides what ships; this is the
+# backstop for anything dropped into the folder later.
+tsconfig.json
+.npmignore
+node_modules/
+*.log
+.DS_Store

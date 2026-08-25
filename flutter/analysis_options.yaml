@@ -1,0 +1,26 @@
+# No lint package is depended on here: this SDK ships zero third-party
+# packages, dev-time ones included, so the rules are listed rather than
+# inherited from flutter_lints.
+analyzer:
+  language:
+    strict-casts: true
+
+linter:
+  rules:
+    - always_declare_return_types
+    - annotate_overrides
+    - avoid_empty_else
+    - avoid_print
+    - await_only_futures
+    - curly_braces_in_flow_control_structures
+    - directives_ordering
+    - prefer_const_constructors
+    - prefer_final_fields
+    - prefer_final_locals
+    # An SDK's public API is read far more often than it is written, and a
+    # host developer cannot see the source from their IDE hover.
+    - public_member_api_docs
+    - sort_child_properties_last
+    - unawaited_futures
+    - unnecessary_this
+    - use_super_parameters

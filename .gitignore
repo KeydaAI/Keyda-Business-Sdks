@@ -1,0 +1,9 @@
+.DS_Store
+build/
+.gradle/
+local.properties
+*.xcuserdatad
+.build/
+Pods/
+node_modules/
+.dart_tool/

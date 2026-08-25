@@ -1,0 +1,27 @@
+name: keyda_bot
+description: Keyda Business chat for Flutter — a thin WebView wrapper that opens your hosted Keyda chat page over your app. No analytics, no device identifiers, no third-party packages.
+version: 0.1.0
+homepage: https://business.keyda.in
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.10.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Two packages, and the only two there will be. Both are published by
+  # flutter.dev out of the same flutter/packages repository the framework
+  # itself ships from, so neither is a third party and neither is a tracker
+  # (CONTRACT.md rule 5): the chat is a hosted page, so a WebView renders all
+  # of it, and rule 2 — other-origin links must reach the system browser —
+  # needs a way to hand a URL to the OS. Flutter has no framework API for
+  # that, the way React Native has Linking.openURL; url_launcher IS that API.
+  # Nothing here reaches for an HTTP client, an analytics package or anything
+  # that reads a device identifier.
+  webview_flutter: ^4.4.0
+  url_launcher: ^6.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter

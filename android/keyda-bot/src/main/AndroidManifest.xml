@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        Merged into the host app's manifest. It is the only permission this SDK adds, and the chat
+        is a hosted page: without it every load fails with ERR_ACCESS_DENIED and the customer sees
+        nothing but the retry screen.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application>
+
+        <!--
+            windowSoftInputMode="adjustResize" is the single line that keeps the keyboard off the
+            message input on every Android version that still resizes windows (CONTRACT rule 3).
+            The versions that ignore it - anything forced edge-to-edge on API 35+ - are covered by
+            the inset listener in KeydaBotActivity, which pads for the IME itself.
+
+            configChanges keeps rotation and dark-mode switches in-process. Letting Android
+            recreate the Activity destroys the WebView, and with it the customer's scroll position
+            and anything they had half-typed; turning the phone must not cost them the sentence.
+
+            hardwareAccelerated is stated explicitly because a host app that sets it to false on
+            its own <application> tag would otherwise pass that down to this Activity, and an
+            unaccelerated WebView renders a chat as a blank or badly torn page.
+
+            exported="false" because nothing outside the app has any business launching the chat;
+            it is opened by KeydaBot.show() and nothing else.
+        -->
+        <activity
+            android:name=".KeydaBotActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|keyboard|navigation|uiMode|density|fontScale|layoutDirection"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar"
+            android:windowSoftInputMode="adjustResize" />
+
+    </application>
+
+</manifest>

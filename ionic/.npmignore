@@ -1,0 +1,12 @@
+# package.json "files" is what actually decides the published tarball; this
+# file is the belt to that braces, so removing "files" one day does not
+# silently start shipping build config and editor droppings to every app that
+# installs the package.
+
+tsconfig.json
+tsconfig.cjs.json
+scripts/
+node_modules/
+.DS_Store
+*.log
+*.tgz
