@@ -45,7 +45,7 @@ Working inside this monorepo, use the directory directly:
 ### CocoaPods
 
 ```ruby
-pod 'KeydaBot', :podspec => 'https://raw.githubusercontent.com/keyda/keyda-business-sdks/main/ios/KeydaBot.podspec'
+pod 'KeydaBot', :podspec => 'https://raw.githubusercontent.com/KeydaAI/keyda-business-sdks/main/KeydaBot.podspec'
 ```
 
 Pointing at the podspec by URL works whether or not the pod is on CocoaPods trunk.

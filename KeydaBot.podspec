@@ -24,6 +24,10 @@ Pod::Spec.new do |s|
   # from an SPM one.
   s.source_files     = 'ios/Sources/KeydaBot/**/*.swift'
   s.swift_version    = '5.9'
-  s.ios.deployment_target = '14.0'
+  # 13.0 to agree with Package.swift. Everything above it — the iOS 14
+  # WKWebpagePreferences path and the iOS 15 sheet detents — is already
+  # behind an #available check, so SPM and CocoaPods must not quote two
+  # different minimums to the same integrator.
+  s.ios.deployment_target = '13.0'
   s.frameworks       = 'UIKit', 'WebKit'
 end

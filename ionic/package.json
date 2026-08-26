@@ -4,6 +4,14 @@
   "description": "Open your Keyda bot in an Ionic/Capacitor app: the plain widget script tag, or the hosted chat page as a full-screen surface.",
   "license": "MIT",
   "homepage": "https://keyda.in/business",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KeydaAI/keyda-business-sdks.git",
+    "directory": "ionic"
+  },
+  "bugs": {
+    "url": "https://github.com/KeydaAI/keyda-business-sdks/issues"
+  },
   "keywords": [
     "keyda",
     "capacitor",
@@ -30,7 +38,8 @@
   "files": [
     "dist",
     "src",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",

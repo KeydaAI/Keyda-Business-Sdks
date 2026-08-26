@@ -2,6 +2,9 @@ name: keyda_bot
 description: Keyda Business chat for Flutter — a thin WebView wrapper that opens your hosted Keyda chat page over your app. No analytics, no device identifiers, no third-party packages.
 version: 0.1.0
 homepage: https://keyda.in/business
+repository: https://github.com/KeydaAI/keyda-business-sdks
+issue_tracker: https://github.com/KeydaAI/keyda-business-sdks/issues
+documentation: https://keyda.in/business/docs/reference-sdks
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

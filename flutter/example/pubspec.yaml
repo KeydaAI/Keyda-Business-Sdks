@@ -1,0 +1,17 @@
+name: keyda_bot_example
+description: Minimal example of opening a Keyda Business bot from a Flutter app.
+publish_to: 'none'
+version: 1.0.0
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.10.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  keyda_bot:
+    path: ../
+
+flutter:
+  uses-material-design: true
