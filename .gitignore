@@ -14,3 +14,7 @@ node_modules/
 
 # Built by `npm run build` / prepublishOnly — never committed.
 ionic/dist/
+
+# A published package pins nothing — pub.dev resolves from pubspec.yaml.
+# Only applications commit a lockfile.
+pubspec.lock

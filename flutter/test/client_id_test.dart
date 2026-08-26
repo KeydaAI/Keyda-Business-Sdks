@@ -168,9 +168,9 @@ void main() {
       expect(staysInChat(Uri.parse('https://keyda.in/business/chat/kb_live_0123abcd?preview=a.b'), chat), isTrue);
       expect(staysInChat(Uri.parse('https://keyda.in/business/chat/kb_live_0123abcd#top'), chat), isTrue);
       // An explicit default port is still the same place.
-      expect(staysInChat(Uri.parse('https://keyda.in/business:443/chat/kb_live_0123abcd'), chat), isTrue);
+      expect(staysInChat(Uri.parse('https://keyda.in:443/business/chat/kb_live_0123abcd'), chat), isTrue);
       // Host case is not part of the identity of a host.
-      expect(staysInChat(Uri.parse('https://BUSINESS.keyda.in/chat/kb_live_0123abcd'), chat), isTrue);
+      expect(staysInChat(Uri.parse('https://KEYDA.IN/business/chat/kb_live_0123abcd'), chat), isTrue);
     });
 
     test('the real Powered by Keyda link leaves', () {
