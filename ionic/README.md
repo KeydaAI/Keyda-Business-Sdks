@@ -231,9 +231,15 @@ Stated plainly, because discovering these after shipping is worse:
 - **No analytics and no device identifiers.** Nothing here observes your users.
   That is a design constraint, not an oversight.
 
-One thing you do get for free on both paths: the chat's only outbound link
-("Powered by Keyda") is `target="_blank" rel="noopener"`, so tapping it opens
-outside the chat rather than replacing your app with a marketing page.
+On outbound links: the chat now carries many of them, not just the
+"Powered by Keyda" footer — every URL or markdown link in a bot answer is
+rendered as an anchor with `target="_blank" rel="noopener noreferrer"`. On the
+full-screen path those open outside the chat by construction (the system
+browser owns the surface). On the embedded path, what happens to a
+`target="_blank"` tap is your shell's external-navigation policy, not this
+package's: stock Capacitor hands it to the system browser, but a Cordova or
+hand-rolled WebView shell may drop it — if links in answers do nothing in your
+app, that is where to look.
 
 ## Licence
 

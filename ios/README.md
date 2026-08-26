@@ -21,9 +21,8 @@ reached the people asking about them.
 
 ### Swift Package Manager
 
-SwiftPM requires `Package.swift` at the root of a repository, and this package lives in
-`ios/` of the SDK monorepo. Add the standalone mirror of this directory — pointing Xcode
-at the monorepo URL will not resolve:
+SwiftPM requires `Package.swift` at the root of a repository, so this monorepo keeps its
+manifest there — the repository URL resolves directly.
 
 In Xcode: **File → Add Package Dependencies…** and enter
 `https://github.com/KeydaAI/keyda-business-sdks`
@@ -32,15 +31,15 @@ Or in a `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/KeydaAI/keyda-business-sdks", from: "0.1.1")
+    .package(url: "https://github.com/KeydaAI/keyda-business-sdks", from: "0.1.2")
 ],
 targets: [
-    .target(name: "YourApp", dependencies: [.product(name: "KeydaBot", package: "keyda-bot-ios")])
+    .target(name: "YourApp", dependencies: [.product(name: "KeydaBot", package: "keyda-business-sdks")])
 ]
 ```
 
-Working inside this monorepo, use the directory directly:
-`.package(path: "../keyda-business-sdks/ios")`
+Working inside this monorepo, point at the repo root (that is where the manifest lives —
+`ios/` has none): `.package(path: "../keyda-business-sdks")`
 
 ### CocoaPods
 

@@ -29,7 +29,7 @@ dependencyResolutionManagement {
 }
 
 // app/build.gradle.kts
-implementation("com.github.KeydaAI:keyda-business-sdks:v0.1.1")
+implementation("com.github.KeydaAI:keyda-business-sdks:v0.1.2")
 ```
 
 Replace `keyda` with the GitHub account this repository sits under. If no tag exists yet, that
@@ -37,7 +37,7 @@ coordinate does not resolve — nothing is on JitPack or Maven Central at the ti
 until the first tag, publish it locally from a clone:
 
 ```bash
-cd android && ./gradlew :keyda-bot:publishToMavenLocal   # in.keyda:keyda-bot:0.1.0
+cd android && ./gradlew :keyda-bot:publishToMavenLocal   # in.keyda:keyda-bot:0.1.2
 ```
 
 and add `mavenLocal()` to your repositories. `in.keyda:keyda-bot` on Maven Central is the intended
@@ -167,7 +167,7 @@ Stated plainly, because finding these out after shipping is worse:
 ```bash
 cd android
 ./gradlew :keyda-bot:assembleRelease      # keyda-bot/build/outputs/aar/
-./gradlew :keyda-bot:publishToMavenLocal  # in.keyda:keyda-bot:0.1.0
+./gradlew :keyda-bot:publishToMavenLocal  # in.keyda:keyda-bot:0.1.2
 ./gradlew :keyda-bot:lintRelease          # kept at zero errors
 ```
 

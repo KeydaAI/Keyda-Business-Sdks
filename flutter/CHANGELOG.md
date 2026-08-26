@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.2
+
+- Version alignment across every Keyda Business SDK; no code changes.
+- All chat features ship server-side (rendered answers with working links,
+  the in-thread "Talk to a person" form, the improved greeting) and reach
+  this package without an update — this release aligns versions and docs.
+
 ## 0.1.0
 
 First release.

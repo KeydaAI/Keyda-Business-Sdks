@@ -4,7 +4,7 @@ Tags: chatbot, live chat, customer support, ai, assistant
 Requires at least: 5.6
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 0.1.0
+Stable tag: 0.1.2
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -36,7 +36,9 @@ one `[KeydaBot]` warning to the browser console, and a message that fails to
 send is answered in the chat itself.
 
 Your bot has to be set live in the dashboard. While it is still a draft the
-launcher appears and tells visitors the chat is not available right now.
+widget adds nothing to your pages at all — it only writes one console line:
+`[KeydaBot] this bot is in draft — set it live in your Keyda dashboard to show
+it here.`
 
 = What this plugin does not do =
 
@@ -60,7 +62,7 @@ some data leaves the visitor's browser. Nothing leaves your server.
 
 The script is loaded from `https://keyda.in/business/widget.js` (or from
 whichever host you configure — see the FAQ). Once running, the visitor's browser
-makes three kinds of request to that same host:
+makes four kinds of request to that same host:
 
 1. It fetches your bot's public settings — greeting, colour, launcher label —
    using your client id.
@@ -69,6 +71,13 @@ makes three kinds of request to that same host:
    keeps your site's domain and the time — not the path, and nothing about the
    visitor.
 3. When a visitor sends a message, it posts that message and a conversation id.
+4. If your bot offers "Talk to a person" (a toggle in your dashboard) and a
+   visitor chooses to fill in that form, what they typed — their email or
+   phone, any name and message they added — is sent to Keyda together with the
+   conversation id, the last question they asked the bot, and the full address
+   of the page they were on (unlike the load ping above, this one does include
+   the page URL). It is stored so you can reply from your dashboard's Leads
+   screen, and it is sent only when the visitor presses Send on that form.
 
 The conversation id is stored in the visitor's browser (localStorage) so a
 returning visitor keeps the same thread for 24 hours. It is not a cross-site
@@ -133,11 +142,17 @@ In this order:
 4. If your bot has an authorised-domains list in the dashboard, your site's
    domain has to be on it. Until it is, the request is refused and the widget
    renders nothing.
+5. Your bot may still be a draft. A draft bot renders nothing on a customer
+   site — the console line in step 3 will say so plainly. Set it live in the
+   Keyda Business dashboard.
 
-= The chat button appears but says the chat is not available. =
+= My inline embed says the chat is not available. =
 
-Your bot is still a draft. Set it live in the Keyda Business dashboard; until
-then that message is what your visitors get.
+The inline container (`data-keyda-bot`, below) renders even for a draft bot so
+that a page under construction is not left with an invisible hole — and inside
+it, visitors are told the chat is not available. Set the bot live in the Keyda
+Business dashboard. The floating button is different: while the bot is a draft
+it does not appear at all.
 
 = Can I show the chat inside the page instead of as a floating button? =
 
@@ -172,6 +187,13 @@ above — and nothing more until a visitor sends a message.
 The single option holding your client id is removed. Nothing else is stored.
 
 == Changelog ==
+
+= 0.1.2 =
+* Documentation: draft bots render nothing on a customer site (the launcher no
+  longer appears with an "unavailable" message); the troubleshooting checklist
+  and inline-embed FAQ now say so.
+* Documentation: the external-services disclosure now covers the optional
+  "Talk to a person" form and exactly what it sends.
 
 = 0.1.0 =
 * First release.
