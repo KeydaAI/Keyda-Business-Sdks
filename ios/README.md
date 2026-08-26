@@ -32,7 +32,7 @@ Or in a `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/KeydaAI/keyda-business-sdks", from: "0.1.0")
+    .package(url: "https://github.com/KeydaAI/keyda-business-sdks", from: "0.1.1")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [.product(name: "KeydaBot", package: "keyda-bot-ios")])

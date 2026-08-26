@@ -29,7 +29,7 @@ dependencyResolutionManagement {
 }
 
 // app/build.gradle.kts
-implementation("com.github.KeydaAI:keyda-business-sdks:v0.1.0")
+implementation("com.github.KeydaAI:keyda-business-sdks:v0.1.1")
 ```
 
 Replace `keyda` with the GitHub account this repository sits under. If no tag exists yet, that

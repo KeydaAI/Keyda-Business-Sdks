@@ -8,7 +8,7 @@
 # onboarding is a bad first impression.
 Pod::Spec.new do |s|
   s.name             = 'KeydaBot'
-  s.version          = '0.1.0'
+  s.version          = '0.1.1'
   s.summary          = 'Drop-in customer support chat for iOS, powered by Keyda Business.'
   s.description      = <<-DESC
     A small WebView wrapper that opens your Keyda Business bot inside your app.
