@@ -2,9 +2,9 @@
 Contributors: keyda
 Tags: chatbot, live chat, customer support, ai, assistant
 Requires at least: 5.6
-Tested up to: 6.6
+Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.1.2
+Stable tag: 0.1.3
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -51,7 +51,8 @@ it here.`
   — described in full under "External services".
 * No per-page targeting. The widget loads on every front-end page, which is the
   same behaviour as pasting the script tag into your footer.
-* No theming beyond what your dashboard already controls.
+* No theming beyond what your dashboard already controls. Light, dark or
+  "match the visitor" is a dashboard setting; the widget applies it.
 * No PHP-side network calls. This plugin never contacts any server from your
   web host; only the visitor's browser talks to Keyda.
 
@@ -120,14 +121,14 @@ or filter it from a theme or mu-plugin:
 
 `add_filter( 'keyda_bot_base_url', function () { return 'https://chat.example.com'; } );`
 
-The widget derives its API endpoint from the host it was loaded from, so this
-moves both the script and its requests. An override that is not a valid http or
-https URL is ignored and the default is used.
-
-Give it a scheme and a host and nothing else — `https://chat.example.com`, not
-`https://example.com/keyda`. The widget builds its API address from the *origin*
-of its own script tag, so a subdirectory survives in the script URL and is
-dropped from the API URL, which loads a widget that cannot reach anything.
+The value is the directory `widget.js` is served from — the plugin appends
+`/widget.js` to it. A path prefix is fine, and is in fact how the default works:
+`https://keyda.in/business` loads `https://keyda.in/business/widget.js`. The
+widget then reaches its API at that *origin's* `/api/business/v1`, whatever the
+path was, so a self-host must answer there — a bare host such as
+`https://chat.example.com` only works when `widget.js` sits at its root. An
+override that is not a valid http or https URL is ignored and the default is
+used.
 
 = I installed it but no chat appears on my site. =
 
@@ -187,6 +188,19 @@ above — and nothing more until a visitor sends a message.
 The single option holding your client id is removed. Nothing else is stored.
 
 == Changelog ==
+
+= 0.1.3 =
+* Documentation: the "different host" FAQ now says what the base URL really
+  is — the directory `widget.js` is served from, path prefix included — and
+  that a self-host must answer at that origin's `/api/business/v1`. The old
+  text told you the opposite.
+* Documentation: "Tested up to" raised to WordPress 6.8.
+* Theme: your bot's theme (light, dark, or matching the visitor's device) is
+  set in your Keyda Business dashboard and applied by the widget itself. There
+  is no theme setting in this plugin, and none is needed — a change in the
+  dashboard is live on your site straight away.
+* Removed a `Domain Path` header that pointed at a languages directory the
+  plugin does not ship.
 
 = 0.1.2 =
 * Documentation: draft bots render nothing on a customer site (the launcher no

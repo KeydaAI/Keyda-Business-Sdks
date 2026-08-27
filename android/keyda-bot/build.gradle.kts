@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 
 plugins {
     id("com.android.library")
@@ -9,7 +10,7 @@ plugins {
 // One source of truth for the version. It is both the published Maven version and the string the
 // WebView appends to its User-Agent; when those two drift, a support ticket says the app runs a
 // version that was never released.
-val sdkVersion = "0.1.2"
+val sdkVersion = "0.1.3"
 
 android {
     namespace = "in.keyda.bot"
@@ -68,6 +69,15 @@ kotlin {
         // Must match compileOptions above, or the build stops with "Inconsistent JVM-target
         // compatibility detected". AGP 8 itself requires JDK 17 to run.
         jvmTarget.set(JvmTarget.JVM_17)
+        // Pinned below the 2.1.20 compiler that builds this AAR on purpose. The Kotlin metadata
+        // written into the AAR carries the LANGUAGE version, not the compiler version, and a
+        // consumer's compiler refuses metadata newer than itself ("Module was compiled with an
+        // incompatible version of Kotlin"). Without this pin every Kotlin app still on a 1.9
+        // compiler fails to build the moment it references KeydaBot. Java consumers never see
+        // any of this; the pin costs nothing on the library side, which uses no 2.x language
+        // feature.
+        apiVersion.set(KotlinVersion.KOTLIN_1_9)
+        languageVersion.set(KotlinVersion.KOTLIN_1_9)
     }
 }
 

@@ -208,6 +208,24 @@ Domains, or the widget loads and then silently refuses to mount.
 The full-screen path is unaffected — the hosted page is served by the platform
 itself and is always allowed.
 
+### Theme
+
+The chat's theme — light, dark, or matching the visitor's device — is set once
+by the bot owner in the dashboard, and the hosted page applies it. There is no
+theme option on this package and no per-app override; the owner's setting
+reaches every surface at once, which is the point of a single hosted renderer.
+
+- **Embedded path** — `widget.js` runs on your page and is themed fully,
+  including "Match the visitor", which follows the device's colour scheme.
+- **Full-screen path** — the chat inside the system browser sheet is themed
+  by the same setting. The sheet's own chrome (the toolbar and the Done/close
+  control) is the platform's and follows the device, not the bot: a system
+  browser view has no bridge for the page to announce its theme through, so
+  this package cannot make an "Always dark" bot's sheet chrome dark on a
+  light device. The native Android, iOS, React Native and Flutter SDKs do
+  match their chrome to the page; if that matters to you, they are the
+  better fit.
+
 ### Conversation continuity
 
 The chat keeps its conversation in DOM storage, per client id, for 24 hours.
@@ -223,8 +241,9 @@ Stated plainly, because discovering these after shipping is worse:
 - **Not offline-capable.** It is a hosted page. No connection, no chat.
 - **No push notifications.** If a customer leaves the chat, nothing brings them
   back.
-- **No native theming.** The accent colour comes from the dashboard and applies
-  everywhere at once; there is no per-app override.
+- **No theme API.** Theme and accent colour come from the dashboard and apply
+  everywhere at once; there is no per-app override. See [Theme](#theme) for
+  what the system browser sheet does and does not follow.
 - **No teardown for the embedded widget.** It mounts once per page load.
 - **`close()` is unreliable on Android**, and impossible without
   `@capacitor/browser`. See [Which path it takes](#which-path-it-takes).

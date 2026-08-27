@@ -19,6 +19,7 @@ import {
   StyleSheet,
   Text,
   View,
+  useColorScheme,
 } from 'react-native';
 import {WebView} from 'react-native-webview';
 
@@ -156,6 +157,51 @@ export interface KeydaBotProps {
 
 type Status = 'loading' | 'ready' | 'failed';
 
+type Scheme = 'light' | 'dark';
+
+/**
+ * The chat page's own surface colours, per scheme. The hosted widget resolves
+ * the owner's Theme setting itself and announces it (rule 7 in CONTRACT.md);
+ * light chrome around a dark chat (white bar, dark status-bar text) would
+ * frame it like a broken page. Kept identical to the page: #f7f8fc is the light
+ * page background, #0b1220 the dark <html> background — the colour of the
+ * page's FIRST paint, which is what the loading cover has to match.
+ */
+const PALETTE = {
+  light: {bg: '#f7f8fc', glyph: '#4a5570', title: '#1f2740', body: '#4a5570', bar: 'dark-content' as const},
+  dark: {bg: '#0b1220', glyph: '#cbd5e1', title: '#e2e8f0', body: '#94a3b8', bar: 'light-content' as const},
+};
+
+/**
+ * The scheme a message from the page names, or null for anything else.
+ *
+ * The page posts `{"type":"keyda:theme","mode":"light"|"dark",...}` through
+ * window.ReactNativeWebView.postMessage as early as its <head> runs, and again
+ * when a "Match the visitor" bot flips with the OS. Anything else arriving on
+ * that channel — another message type, a non-JSON string, a future field
+ * shape — is ignored rather than guessed at, and never thrown on: onMessage
+ * runs inside the host app, which rule 6 says this SDK must not crash.
+ */
+function themeFromMessage(data: unknown): Scheme | null {
+  if (typeof data !== 'string') {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(data);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) {
+    return null;
+  }
+  const msg = parsed as {type?: unknown; mode?: unknown};
+  if (msg.type !== 'keyda:theme') {
+    return null;
+  }
+  return msg.mode === 'dark' ? 'dark' : msg.mode === 'light' ? 'light' : null;
+}
+
 /**
  * The chat, presented over the host app. Render it once anywhere in the tree
  * and drive `visible` yourself, or let `useKeydaBot` hold that state for you.
@@ -165,6 +211,16 @@ export function KeydaBot({clientId, baseUrl, visible, onClose}: KeydaBotProps): 
   // throws while the developer is looking at the screen, instead of the first
   // time a customer taps the button.
   const chatUrl = useMemo(() => buildChatUrl(clientId, baseUrl), [clientId, baseUrl]);
+
+  // The page owns the theme (the dashboard's Match the visitor / Always light /
+  // Always dark is resolved there, not here — there is no theme prop), and it
+  // tells this shell which scheme it settled on. Until that message arrives —
+  // and against a backend that predates it — the device scheme stands in,
+  // which is what "Match the visitor" means. Nothing here is a prop, so a host
+  // app cannot override the owner's choice.
+  const deviceScheme: Scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
+  const [pageScheme, setPageScheme] = useState<Scheme | null>(null);
+  const colors = PALETTE[pageScheme ?? deviceScheme];
 
   const [status, setStatus] = useState<Status>('loading');
   // Retrying by remounting rather than by reload(): after an Android renderer
@@ -179,6 +235,11 @@ export function KeydaBot({clientId, baseUrl, visible, onClose}: KeydaBotProps): 
     // retry screen for a load that never happened.
     if (visible) {
       setStatus('loading');
+    } else {
+      // The theme the page reported belongs to THAT page instance, and the
+      // next open loads a fresh one: an owner who switched the bot to Always
+      // light in between must not see a dark cover paint over a light chat.
+      setPageScheme(null);
     }
   }, [visible]);
 
@@ -221,6 +282,16 @@ export function KeydaBot({clientId, baseUrl, visible, onClose}: KeydaBotProps): 
 
   const handleError = useCallback(() => setStatus('failed'), []);
 
+  const handleMessage = useCallback((event: {nativeEvent: {data: string}}) => {
+    // The event carries whatever the page passed to postMessage, verbatim. Only
+    // a well-formed keyda:theme message changes anything; setState from a
+    // WebView callback already lands on the JS thread, so no dispatch needed.
+    const scheme = themeFromMessage(event.nativeEvent && event.nativeEvent.data);
+    if (scheme !== null) {
+      setPageScheme(scheme);
+    }
+  }, []);
+
   const handleHttpError = useCallback(
     (event: {nativeEvent: {url?: string}}) => {
       // onHttpError also fires for sub-resources on iOS. A 404 on some image
@@ -249,14 +320,20 @@ export function KeydaBot({clientId, baseUrl, visible, onClose}: KeydaBotProps): 
       // iOS modals are portrait-only unless told otherwise, so an app that
       // rotates would freeze the chat in portrait.
       supportedOrientations={['portrait', 'landscape']}>
-      {/* The chat page is light; a host app in dark mode leaves white status
-          bar text unreadable over it. RN restores the previous style when this
-          unmounts, so the host app's own bar is not disturbed. */}
-      <StatusBar barStyle="dark-content" />
+      {/* Bar text must contrast with the chat behind it, which follows the
+          scheme. RN restores the previous style when this unmounts, so the host
+          app's own bar is not disturbed. */}
+      <StatusBar barStyle={colors.bar} />
       {/* Insets on every edge: the page ships viewport-fit=cover but sets no
           env(safe-area-inset-*) padding of its own, so nothing else keeps the
-          message box off the home indicator or out of the notch. */}
-      <SafeAreaView style={styles.root}>
+          message box off the home indicator or out of the notch.
+          Core SafeAreaView is deprecated in favour of
+          react-native-safe-area-context, but it is the ONLY dependency-free
+          source of the notch / home-indicator insets on iOS (StatusBar.
+          currentHeight is Android-only and says nothing about the bottom), and
+          this package takes no dependency beyond the WebView peer. It stays
+          until React Native removes it; see Limitations in the README. */}
+      <SafeAreaView style={[styles.root, {backgroundColor: colors.bg}]}>
         <View style={styles.bar}>
           {/* The page renders its own header but NO close button when it is
               embedded like this — this is the only way out of the chat. */}
@@ -266,7 +343,7 @@ export function KeydaBot({clientId, baseUrl, visible, onClose}: KeydaBotProps): 
             accessibilityLabel="Close chat"
             hitSlop={12}
             style={styles.close}>
-            <Text style={styles.closeGlyph} maxFontSizeMultiplier={1.6}>
+            <Text style={[styles.closeGlyph, {color: colors.glyph}]} maxFontSizeMultiplier={1.6}>
               ✕
             </Text>
           </Pressable>
@@ -281,8 +358,10 @@ export function KeydaBot({clientId, baseUrl, visible, onClose}: KeydaBotProps): 
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           {status === 'failed' ? (
             <View style={styles.center}>
-              <Text style={styles.errorTitle}>Chat didn’t load</Text>
-              <Text style={styles.errorBody}>Check your connection and try again.</Text>
+              <Text style={[styles.errorTitle, {color: colors.title}]}>Chat didn’t load</Text>
+              <Text style={[styles.errorBody, {color: colors.body}]}>
+                Check your connection and try again.
+              </Text>
               <Pressable onPress={retry} accessibilityRole="button" style={styles.retry}>
                 <Text style={styles.retryLabel}>Try again</Text>
               </Pressable>
@@ -292,7 +371,7 @@ export function KeydaBot({clientId, baseUrl, visible, onClose}: KeydaBotProps): 
               <WebView
                 key={attempt}
                 source={{uri: chatUrl}}
-                style={styles.web}
+                style={[styles.web, {backgroundColor: colors.bg}]}
                 // The chat is a web app. Without JavaScript there is no chat.
                 javaScriptEnabled
                 // The visitor's conversation id lives in localStorage. Without
@@ -325,6 +404,12 @@ export function KeydaBot({clientId, baseUrl, visible, onClose}: KeydaBotProps): 
                 // The page is a fixed full-screen layout — Android's overscroll
                 // glow on it just reads as broken.
                 overScrollMode="never"
+                // The page's theme announcement (rule 7). Wiring onMessage is
+                // also what makes window.ReactNativeWebView exist in the page
+                // at all — react-native-webview only injects the bridge when a
+                // handler is set — so it must stay even if the shell ever
+                // stops caring about the payload.
+                onMessage={handleMessage}
                 onLoadEnd={handleLoadEnd}
                 onError={handleError}
                 onHttpError={handleHttpError}
@@ -334,8 +419,8 @@ export function KeydaBot({clientId, baseUrl, visible, onClose}: KeydaBotProps): 
               {status === 'loading' ? (
                 // Covers the WebView's white first frame with the page's own
                 // background, so opening the chat is not a flash of white.
-                <View style={styles.cover} pointerEvents="none">
-                  <ActivityIndicator />
+                <View style={[styles.cover, {backgroundColor: colors.bg}]} pointerEvents="none">
+                  <ActivityIndicator color={colors.body} />
                 </View>
               ) : null}
             </>
@@ -377,10 +462,11 @@ export function useKeydaBot(clientId: string, baseUrl?: string): KeydaBotControl
   return {isShowing, show, dismiss, botProps};
 }
 
-// #f7f8fc is the chat page's own background, so the container it sits in and
-// the page itself are one surface rather than two.
+// Every surface colour is applied inline from PALETTE so the container and the
+// page inside it are one surface rather than two, in both schemes; only the
+// scheme-independent geometry lives here.
 const styles = StyleSheet.create({
-  root: {flex: 1, backgroundColor: '#f7f8fc'},
+  root: {flex: 1},
   fill: {flex: 1},
   bar: {
     height: 44,
@@ -396,17 +482,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  closeGlyph: {fontSize: 18, lineHeight: 22, color: '#4a5570'},
-  web: {flex: 1, backgroundColor: '#f7f8fc'},
+  closeGlyph: {fontSize: 18, lineHeight: 22},
+  web: {flex: 1},
   cover: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#f7f8fc',
     alignItems: 'center',
     justifyContent: 'center',
   },
   center: {flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24},
-  errorTitle: {fontSize: 17, fontWeight: '600', color: '#1f2740', marginBottom: 6},
-  errorBody: {fontSize: 15, color: '#4a5570', textAlign: 'center', marginBottom: 18},
+  errorTitle: {fontSize: 17, fontWeight: '600', marginBottom: 6},
+  errorBody: {fontSize: 15, textAlign: 'center', marginBottom: 18},
   retry: {
     paddingHorizontal: 20,
     paddingVertical: 11,

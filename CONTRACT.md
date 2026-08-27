@@ -49,7 +49,8 @@ does not work end-to-end is worse than a missing one.
    navigation to a different origin goes to the system browser.
 3. **The keyboard must not cover the input.** This is the single most common
    WebView chat defect. Android: `adjustResize` behaviour on the host window.
-   iOS: `keyboardDisplayRequiresUserAction = false` plus safe-area insets.
+   iOS: the keyboard's height is published to the page as an additional bottom
+   safe-area inset, so the composer rises with it.
 4. **Safe areas are respected.** The page already ships
    `viewport-fit=cover`; the container must not draw the chat under a notch
    or a home indicator.
@@ -58,12 +59,36 @@ does not work end-to-end is worse than a missing one.
    it. Zero dependencies beyond the platform's own WebView.
 6. **Never crash the host app.** A failed load shows a retry, not an
    exception. The host's users are not our users.
+7. **The owner's theme reaches the native chrome.** The dashboard's Theme
+   setting (Match the visitor / Always light / Always dark) is resolved by the
+   hosted page — it is the page that knows it — and announced to the shell so
+   the status bar, the loading cover and the close control match the chat
+   instead of contradicting it. The page posts one JSON message, as early as
+   its `<head>` runs and again whenever a "Match the visitor" bot flips with
+   the OS:
+
+       {"type":"keyda:theme","mode":"light"|"dark","setting":"auto"|"light"|"dark","accent":"#rrggbb"}
+
+   to every bridge it can find: `window.ReactNativeWebView.postMessage(json)`
+   (React Native), `window.KeydaBotNative.onTheme(json)` (Android
+   `addJavascriptInterface` named `KeydaBotNative`),
+   `window.webkit.messageHandlers.keydaBot.postMessage(json)` (iOS
+   `WKScriptMessageHandler` named `keydaBot`) and
+   `window.KeydaBotFlutter.postMessage(json)` (Flutter `JavaScriptChannel`
+   named `KeydaBotFlutter`). Shells apply `mode` — dark: background `#0b1220`,
+   light status-bar text; light: background `#f7f8fc`, dark status-bar text —
+   and ignore any message whose `type` is not exactly `keyda:theme`. Until the
+   message arrives (and against a backend that predates it) a shell follows
+   the device, which is what "Match the visitor" means. Capacitor/Ionic opens
+   the page in the system browser sheet, which has no bridge; the chat inside
+   it is themed, the sheet's own chrome is the platform's.
 
 ## What we do NOT claim
 
 * Not offline-capable — it is a hosted page.
 * No push notifications yet.
-* No native theming beyond the accent the dashboard already controls.
+* No theme API on the SDKs themselves: the owner sets the theme once in the
+  dashboard and the page carries it (rule 7). A host app cannot override it.
 
 Anything above that a package cannot do must be absent from its README, not
 described optimistically.

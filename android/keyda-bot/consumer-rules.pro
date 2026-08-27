@@ -10,12 +10,15 @@
 #                                   loud ClassNotFoundException, not a silently kept class.
 #   in.keyda.bot.KeydaBot           Kept by being called from the app's own code.
 #
-# There is no reflection in this SDK, no @JavascriptInterface bridge into the page, and nothing
-# serialized. Those are the three things that normally need explicit keeps, and none of them
-# apply. If a JS bridge is ever added, it needs its own rule -
-#   -keepclassmembers class in.keyda.bot.** { @android.webkit.JavascriptInterface <methods>; }
-# because R8 cannot see calls that arrive from JavaScript, and a stripped bridge method fails only
-# at runtime, in release, in front of a customer.
+# There is no reflection in this SDK and nothing serialized. The one @JavascriptInterface bridge
+# (KeydaBotActivity.ThemeBridge.onTheme, which the hosted page calls as
+# window.KeydaBotNative.onTheme to announce the owner's theme - CONTRACT rule 7) is kept by the
+# rule below. R8 cannot see calls that arrive from JavaScript, and a stripped bridge method fails
+# only at runtime, in release, in front of a customer: the chat opens, the chrome simply never
+# matches it, and nothing in Logcat says why.
+-keepclassmembers class in.keyda.bot.** {
+    @android.webkit.JavascriptInterface <methods>;
+}
 
 # THE ONE RULE THAT IS REAL
 #

@@ -66,6 +66,18 @@ export function normaliseBaseUrl(baseUrl?: string): string {
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
     throw new Error(`[KeydaBot] baseUrl "${raw}" must be http or https.`);
   }
+  // A query or a #fragment is refused rather than tolerated: both callers
+  // append a path (`/chat/{id}`, `/widget.js`), so "https://host?x=1" would
+  // build "https://host?x=1/chat/kb_live_…" — a URL nobody can see is wrong
+  // until it 404s in front of a customer. CONTRACT.md: bad configuration
+  // fails at init. The React Native SDK applies the same rule.
+  if (parsed.search || parsed.hash || raw.endsWith('?') || raw.endsWith('#')) {
+    throw new Error(
+      `[KeydaBot] baseUrl "${raw}" must not carry a query string or a ` +
+        `#fragment: the chat path is appended to it. Pass an origin, ` +
+        `optionally with a path prefix, such as "https://keyda.in/business".`,
+    );
+  }
   // Keep the path: a self-host may sit under a prefix such as
   // https://example.in/keyda, and dropping it would 404 every request.
   return raw.replace(/\/+$/, '');

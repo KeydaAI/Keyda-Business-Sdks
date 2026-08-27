@@ -31,7 +31,7 @@ Or in a `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/KeydaAI/keyda-business-sdks", from: "0.1.2")
+    .package(url: "https://github.com/KeydaAI/keyda-business-sdks", from: "0.1.3")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [.product(name: "KeydaBot", package: "keyda-business-sdks")])
@@ -83,6 +83,22 @@ becomes `https://yourcompany.in/support/chat/kb_live_…`. A plain `http://` bas
 accepted for a machine on your desk, but App Transport Security will block the load
 unless your app's `Info.plist` allows that host.
 
+A base that redirects on its own host — `http` to `https`, apex to `www.`, a staging
+alias — is followed while the chat is first loading, and the redirected address becomes
+the chat's own. A redirect to any other host is treated like a link and opens in Safari,
+so point `baseUrl` at the final origin.
+
+### Theme
+
+The owner sets the Theme (Match the visitor / Always light / Always dark) in the
+dashboard, and the hosted page resolves it — it is the page that knows. The page reports
+the result to the sheet, which then matches it: dark background `#0b1220` with light
+status-bar text, or light background `#f7f8fc` with dark text, on the loading cover, the
+retry screen and the close button. Until the page reports, the sheet follows the
+device's appearance, which is what "Match the visitor" means; a "Match the visitor" bot
+also flips with the device while it is open. There is no theme property on the SDK — a
+host app cannot override what the owner chose.
+
 ### A bad client id fails loudly
 
 The id must match `kb_live_` followed by 8–48 lowercase hex characters. Anything else
@@ -116,9 +132,10 @@ page in front of your customer either.
   background delivery and no badge.
 * **No message, unread or user-identity API.** Not "coming soon" — absent, because
   nothing behind them works end to end yet.
-* **Theming is the dashboard's.** The sheet carries a close button and the system
-  background colour; everything else about how the chat looks is set in the dashboard,
-  not from Swift.
+* **Theming is the dashboard's.** There is no theme property on the SDK. The owner
+  picks light, dark or "match the visitor" once in the dashboard; the page resolves it
+  and the sheet follows the page (see Theme above). Everything else about how the chat
+  looks is set in the dashboard, not from Swift.
 * **App targets only.** The SDK presents UI and opens links through
   `UIApplication.shared`, so it is marked unavailable in app extensions and will not
   build into one.
@@ -128,10 +145,12 @@ page in front of your customer either.
 ## Tests
 
 ```
-swift test
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
 ```
 
 Pure unit tests over client-id validation and URL building — no simulator, no host app.
+An Xcode toolchain is still required: the Command Line Tools ship no XCTest, so a bare
+`swift test` under `/Library/Developer/CommandLineTools` stops at `no such module 'XCTest'`.
 The parts of the SDK that decide whether a customer sees their chat or a 404 are kept
 free of UIKit precisely so they can be tested that way.
 

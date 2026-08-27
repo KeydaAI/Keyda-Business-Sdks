@@ -2,6 +2,27 @@
 import UIKit
 import WebKit
 
+/// Forwards `keydaBot` script messages to the controller without retaining it.
+///
+/// `WKUserContentController` holds its message handlers strongly, and the controller
+/// holds the web view, so registering the controller itself would be a retain cycle
+/// that keeps every dismissed sheet — and its web content process — alive for the life
+/// of the app. The proxy is what the content controller retains; the controller behind
+/// it is weak, and once it is gone the message is simply dropped.
+@available(iOSApplicationExtension, unavailable)
+private final class KeydaBotScriptMessageProxy: NSObject, WKScriptMessageHandler {
+    private weak var target: KeydaBotViewController?
+
+    init(target: KeydaBotViewController) {
+        self.target = target
+    }
+
+    func userContentController(_ userContentController: WKUserContentController,
+                               didReceive message: WKScriptMessage) {
+        target?.receive(scriptMessage: message)
+    }
+}
+
 /// Hosts the hosted chat page.
 ///
 /// Internal on purpose: the contract every Keyda SDK implements exposes four calls and
@@ -23,8 +44,29 @@ final class KeydaBotViewController: UIViewController {
     /// it with a retry screen. See `handle(_:)`.
     private var hasRenderedChat = false
 
+    /// The URL the chat is judged against. Starts as the configured chat URL and moves
+    /// only when the host redirects the FIRST load (apex → `www.`, `http` → `https`);
+    /// see `decidePolicyFor navigationAction`.
+    private var chatURL: URL
+
+    /// The `WKScriptMessageHandler` name the hosted page posts its theme to:
+    /// `window.webkit.messageHandlers.keydaBot.postMessage(json)`. Fixed by the
+    /// contract (rule 7); renaming it here silently turns the theme bridge off.
+    private static let scriptMessageHandlerName = "keydaBot"
+
+    /// The container colour, per the contract: `#0b1220` in dark, `#f7f8fc` in light.
+    /// Dynamic rather than fixed so that it follows the device until the page reports
+    /// (`overrideUserInterfaceStyle == .unspecified`) and the page's verdict afterwards
+    /// — the same colour object serves both without being reassigned.
+    private static let containerBackground = UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 0x0b / 255.0, green: 0x12 / 255.0, blue: 0x20 / 255.0, alpha: 1)
+            : UIColor(red: 0xf7 / 255.0, green: 0xf8 / 255.0, blue: 0xfc / 255.0, alpha: 1)
+    }
+
     init(configuration: KeydaBotConfiguration) {
         self.botConfiguration = configuration
+        self.chatURL = configuration.chatURL
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -32,6 +74,25 @@ final class KeydaBotViewController: UIViewController {
     required init?(coder: NSCoder) {
         fatalError("KeydaBotViewController is created by KeydaBot.show(), never from a storyboard.")
     }
+
+    deinit {
+        // The proxy already keeps this from being a cycle; removing the handler is
+        // hygiene so the content controller does not keep forwarding into a dead
+        // proxy. Guarded on `isViewLoaded` because `webView` is lazy: touching it here
+        // on a controller that never loaded would build a web view just to tear it down.
+        if isViewLoaded {
+            webView.configuration.userContentController
+                .removeScriptMessageHandler(forName: Self.scriptMessageHandlerName)
+        }
+    }
+
+    /// `.default` is not "always dark text" on iOS 13+: it resolves against this
+    /// controller's trait collection, so once `overrideUserInterfaceStyle` is set from
+    /// the page's theme the status bar flips with it — light text over `#0b1220`, dark
+    /// text over `#f7f8fc` — and before that it follows the device, like everything
+    /// else. Returning `.lightContent`/`.darkContent` by hand would only duplicate that
+    /// logic and drift from it.
+    override var preferredStatusBarStyle: UIStatusBarStyle { .default }
 
     // MARK: - Views
 
@@ -75,7 +136,7 @@ final class KeydaBotViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = Self.containerBackground
 
         // The web view is pinned to the view's edges, not to the safe area. The page
         // ships `viewport-fit=cover` and pads its own content with
@@ -128,6 +189,20 @@ final class KeydaBotViewController: UIViewController {
         webView.load(URLRequest(url: botConfiguration.chatURL))
     }
 
+    /// A startup redirect is followed only while the first load is still in flight and
+    /// only when it stays on the chat's own host (or moves between apex and `www.`).
+    /// Mirrors `startupRedirect` in the Android SDK: a base URL that redirects would
+    /// otherwise have its own chat thrown into Safari before it ever rendered, leaving
+    /// a stopped spinner and an empty sheet behind — `handle(_:)` cannot show a retry
+    /// for it because the cancellation arrives as -999, which it must ignore. Gated on
+    /// `.other` so a link tapped inside a live conversation can never move the sheet.
+    private func isStartupRedirect(_ url: URL, _ action: WKNavigationAction) -> Bool {
+        guard !hasRenderedChat, action.navigationType == .other,
+              let host = url.host?.lowercased(),
+              let chatHost = chatURL.host?.lowercased() else { return false }
+        return host == chatHost || host == "www." + chatHost || "www." + host == chatHost
+    }
+
     @objc private func retryTapped() {
         // `reload()` on a web view whose provisional load never completed reloads
         // nothing, so start the request again from the URL.
@@ -160,6 +235,59 @@ final class KeydaBotViewController: UIViewController {
         // on-device content blocker ate) must not take the transcript down with it.
         guard !hasRenderedChat else { return }
         showFailure()
+    }
+
+    // MARK: - Theme
+
+    /// Applies the theme the hosted page reports, and nothing else.
+    ///
+    /// The page is the only party that knows the owner's dashboard setting, so the
+    /// shell never guesses: until a `keyda:theme` message arrives the override stays
+    /// `.unspecified` and the chrome follows the device, which is exactly what "Match
+    /// the visitor" means and what a backend that predates the bridge gets. Parsing is
+    /// deliberately forgiving — anything that is not a JSON object with
+    /// `type == "keyda:theme"` and a recognised `mode` is dropped without a trace.
+    /// This runs inside the host's process; a malformed message must never bring it
+    /// down (rule 6).
+    fileprivate func receive(scriptMessage message: WKScriptMessage) {
+        guard message.name == Self.scriptMessageHandlerName else { return }
+
+        // WebKit hands a JS string through as `String` and a JS object as a dictionary;
+        // the page sends a string, but accept both so a future page that posts the
+        // object directly still works.
+        let payload: [String: Any]?
+        if let text = message.body as? String {
+            guard let data = text.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) else { return }
+            payload = object as? [String: Any]
+        } else {
+            payload = message.body as? [String: Any]
+        }
+
+        guard let theme = payload, theme["type"] as? String == "keyda:theme" else { return }
+
+        let style: UIUserInterfaceStyle
+        switch theme["mode"] as? String {
+        case "dark": style = .dark
+        case "light": style = .light
+        default: return
+        }
+        apply(style)
+    }
+
+    /// One switch flips the whole chrome: `overrideUserInterfaceStyle` re-resolves
+    /// `containerBackground`, the close button's `.label` tint and the
+    /// `.systemChromeMaterial` blur behind it, and `preferredStatusBarStyle` (`.default`)
+    /// reads the same trait — so there is nothing to recolour by hand.
+    private func apply(_ style: UIUserInterfaceStyle) {
+        // Script messages are delivered on the main thread, but UI is touched from
+        // here only, so make the guarantee explicit rather than inherited.
+        let work = { [weak self] in
+            guard let self = self, self.overrideUserInterfaceStyle != style else { return }
+            self.overrideUserInterfaceStyle = style
+            self.setNeedsStatusBarAppearanceUpdate()
+        }
+        if Thread.isMainThread { work() } else { DispatchQueue.main.async(execute: work) }
     }
 
     // MARK: - Keyboard
@@ -254,6 +382,15 @@ final class KeydaBotViewController: UIViewController {
         // Nothing starts making noise inside somebody else's app on its own.
         configuration.mediaTypesRequiringUserActionForPlayback = .all
 
+        // Rule 7: the page announces the owner's resolved theme through this handler
+        // as early as its <head> runs, and again when a "Match the visitor" bot flips
+        // with the OS. Registered through a weak proxy — see
+        // `KeydaBotScriptMessageProxy` for why not `self`.
+        configuration.userContentController.add(
+            KeydaBotScriptMessageProxy(target: self),
+            name: Self.scriptMessageHandlerName
+        )
+
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = self
 
@@ -289,8 +426,10 @@ final class KeydaBotViewController: UIViewController {
 
     private func makeFailureView() -> UIView {
         let container = UIView()
-        // Opaque: it covers a blank web view rather than sitting over it.
-        container.backgroundColor = .systemBackground
+        // Opaque: it covers a blank web view rather than sitting over it. The same
+        // colour as the container so the retry screen does not contradict the theme
+        // the page last reported.
+        container.backgroundColor = Self.containerBackground
         container.isHidden = true
         container.translatesAutoresizingMaskIntoConstraints = false
 
@@ -402,9 +541,13 @@ extension KeydaBotViewController: WKNavigationDelegate {
         // happens to carry target="_blank" and so escapes through the branch above — but
         // any same-host link WITHOUT it (an answer that links to a pricing page, a
         // redirect) would not, and would silently destroy the conversation.
-        let staysInChat = KeydaBotConfiguration.staysInChat(url, chatURL: botConfiguration.chatURL)
+        let staysInChat = KeydaBotConfiguration.staysInChat(url, chatURL: chatURL)
 
         if staysInChat && !isNewWindow {
+            decisionHandler(.allow)
+        } else if !isNewWindow && isStartupRedirect(url, navigationAction) {
+            KeydaBotLog.error("KeydaBot: the chat host redirected to \(url.host ?? "?"); following it in place.")
+            chatURL = url
             decisionHandler(.allow)
         } else {
             decisionHandler(.cancel)

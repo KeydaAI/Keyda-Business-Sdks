@@ -19,14 +19,21 @@ The full reasoning, shared by every SDK in this repository, is in
 
 ## Install
 
-Not on pub.dev yet. Add it from this repository — the package is the
-`flutter/` directory:
+From [pub.dev](https://pub.dev/packages/keyda_bot):
+
+```yaml
+dependencies:
+  keyda_bot: ^0.1.3
+```
+
+To build against an unreleased commit instead, point at this repository — the
+package is its `flutter/` directory:
 
 ```yaml
 dependencies:
   keyda_bot:
     git:
-      url: <the clone URL of this repository>
+      url: https://github.com/KeydaAI/keyda-business-sdks.git
       path: flutter
 ```
 
@@ -151,6 +158,17 @@ sets `android:windowSoftInputMode="adjustPan"`, the window slides instead of
 resizing, the WebView never learns the viewport shrank, and the keyboard will
 cover the input. Flutter's default (`adjustResize`) is what you want.
 
+## Theme
+
+The chat's theme — Match the visitor, Always light or Always dark — is set
+once by the owner in the dashboard. The hosted page resolves it and reports it
+to this package, which repaints its own chrome to match: the status-bar icons,
+the close button, the loading cover and the retry screen (dark `#0b1220` /
+light `#f7f8fc`, the page's own backgrounds). Until the page reports, the
+chrome follows the device scheme, which is what "Match the visitor" means
+anyway. There is no theme parameter on `KeydaBot.show` and no plan for one:
+the host app does not get to contradict the owner.
+
 ## Limitations
 
 Stated plainly, because finding these out later is worse:
@@ -159,8 +177,9 @@ Stated plainly, because finding these out later is worse:
   shows a retry button, never an exception into your app.
 - **No push notifications.** A reply that arrives while the chat is closed is
   waiting when it reopens; nothing notifies the customer.
-- **No native theming.** The accent the dashboard controls is the theming. The
-  only Flutter chrome here is a close button and the retry screen.
+- **No theme API.** The theme and accent the dashboard controls are the
+  theming; the package's own chrome follows the page (see Theme above) and
+  cannot be overridden from the host app.
 - **Conversation continuity depends on DOM storage** — the page remembers the
   visitor there. `webview_flutter`'s Android and iOS WebViews enable it by
   default and this package never disables it, but clearing the app's data

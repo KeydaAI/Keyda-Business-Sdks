@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -35,10 +38,31 @@ class KeydaChatPage extends StatefulWidget {
   State<KeydaChatPage> createState() => _KeydaChatPageState();
 }
 
+/// CONTRACT.md rule 7: the two backgrounds a shell paints. They are the hosted
+/// page's own page colours, so the loading cover, the close bar and the retry
+/// screen are indistinguishable from the chat that replaces them.
+const Color _darkBackground = Color(0xFF0B1220);
+const Color _lightBackground = Color(0xFFF7F8FC);
+
+/// The JavaScript channel name the hosted page looks for
+/// (`window.KeydaBotFlutter.postMessage`). Renaming it silently breaks rule 7.
+const String _themeChannel = 'KeydaBotFlutter';
+
 class _KeydaChatPageState extends State<KeydaChatPage> {
   late final WebViewController _controller;
   bool _isLoading = true;
   bool _failed = false;
+
+  /// The scheme the chrome is drawn in. Null until something decides it: the
+  /// device scheme on the first build, then whatever the page announces
+  /// (rule 7). Kept nullable rather than defaulted so a page message that
+  /// arrives before the first build is not overwritten by the device fallback.
+  Brightness? _brightness;
+
+  /// True once the page has reported its theme. From then on the device scheme
+  /// is ignored — the page is the one that knows the owner's setting, and it
+  /// re-posts when a "Match the visitor" bot flips with the OS.
+  bool _pageDecidedTheme = false;
 
   @override
   void initState() {
@@ -52,9 +76,9 @@ class _KeydaChatPageState extends State<KeydaChatPage> {
     _controller = WebViewController()
       // The chat is a web app; with JavaScript off there is no chat at all.
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      // The WebView's own default is transparent, which renders as a black
-      // rectangle for the moment before the page paints. Chat pages are light.
-      ..setBackgroundColor(Colors.white)
+      // Registered BEFORE loadRequest: the page posts its theme from <head>,
+      // and a channel added after the load starts can miss that first message.
+      ..addJavaScriptChannel(_themeChannel, onMessageReceived: _onThemeMessage)
       ..setNavigationDelegate(
         NavigationDelegate(
           onNavigationRequest: _onNavigationRequest,
@@ -64,6 +88,73 @@ class _KeydaChatPageState extends State<KeydaChatPage> {
         ),
       )
       ..loadRequest(widget.chatUrl);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Rule 7's fallback: until the page reports, follow the device — that is
+    // what "Match the visitor" means, and it is also all a backend that
+    // predates the message will ever give us. Re-run on every dependency
+    // change so an OS flip is honoured while we are still waiting; once the
+    // page has spoken, its word stands.
+    if (_pageDecidedTheme) {
+      return;
+    }
+    final Brightness device = MediaQuery.maybePlatformBrightnessOf(context) ??
+        Theme.of(context).brightness;
+    if (device != _brightness) {
+      _brightness = device;
+      _applyWebViewBackground(device);
+    }
+  }
+
+  /// Rule 7: the page announces the owner's resolved theme as
+  /// `{"type":"keyda:theme","mode":"light"|"dark",...}`. Anything else on the
+  /// channel — another type, malformed JSON, a non-object — is ignored; the
+  /// page is content we do not control, and a bad message must never crash
+  /// the host app (rule 6).
+  void _onThemeMessage(JavaScriptMessage message) {
+    Object? decoded;
+    try {
+      decoded = jsonDecode(message.message);
+    } on FormatException {
+      return;
+    }
+    if (decoded is! Map<String, dynamic>) {
+      return;
+    }
+    if (decoded['type'] != 'keyda:theme') {
+      return;
+    }
+    final Object? mode = decoded['mode'];
+    final Brightness brightness;
+    if (mode == 'dark') {
+      brightness = Brightness.dark;
+    } else if (mode == 'light') {
+      brightness = Brightness.light;
+    } else {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    // onMessageReceived is already delivered on the platform thread, so
+    // setState here is safe; no post-frame hop needed.
+    setState(() {
+      _pageDecidedTheme = true;
+      _brightness = brightness;
+    });
+    _applyWebViewBackground(brightness);
+  }
+
+  void _applyWebViewBackground(Brightness brightness) {
+    // The WebView's own default is transparent, which renders as a black
+    // rectangle for the moment before the page paints; painting the page's
+    // own background instead makes that moment invisible in either scheme.
+    _controller.setBackgroundColor(
+      brightness == Brightness.dark ? _darkBackground : _lightBackground,
+    );
   }
 
   void _onPageStarted(String url) {
@@ -200,40 +291,58 @@ class _KeydaChatPageState extends State<KeydaChatPage> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Scaffold(
-      // Without this the soft keyboard covers the message input: the WebView
-      // keeps its full height, the page never learns the viewport shrank, and
-      // the field it scrolls to sits under the keys.
-      resizeToAvoidBottomInset: true,
-      backgroundColor: theme.colorScheme.surface,
-      body: SafeArea(
-        // The page ships viewport-fit=cover and paints its own background to
-        // the edges; these insets keep the input and the close button clear of
-        // a notch, a punch-hole and the home indicator.
-        child: Column(
-          children: <Widget>[
-            _CloseBar(onClose: _close),
-            Expanded(
-              child: Stack(
-                children: <Widget>[
-                  WebViewWidget(controller: _controller),
-                  if (_isLoading && !_failed)
-                    const Center(child: CircularProgressIndicator()),
-                  if (_failed)
-                    // Positioned.fill so the panel is given tight constraints
-                    // and covers the half-drawn page underneath it, instead of
-                    // shrinking to its own text.
-                    Positioned.fill(
-                      child: _LoadFailed(
-                        onRetry: _retry,
-                        background: theme.colorScheme.surface,
+    // The host's Theme is deliberately NOT consulted for colours: the owner
+    // chose the chat's theme in the dashboard, and a light host app must not
+    // paint a light close bar over a dark chat (rule 7). The chrome takes its
+    // colours from the same two backgrounds the page uses.
+    final Brightness brightness = _brightness ?? Brightness.light;
+    final bool dark = brightness == Brightness.dark;
+    final Color background = dark ? _darkBackground : _lightBackground;
+    final Color foreground = dark ? Colors.white : const Color(0xFF0B1220);
+
+    // Status-bar icon brightness is the one piece of chrome the Scaffold
+    // cannot paint: dark chat, light status-bar text and vice versa. The
+    // AnnotatedRegion scopes it to this route, so the host's own status bar
+    // style returns the moment the chat is dismissed.
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: dark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+      child: Scaffold(
+        // Without this the soft keyboard covers the message input: the WebView
+        // keeps its full height, the page never learns the viewport shrank,
+        // and the field it scrolls to sits under the keys.
+        resizeToAvoidBottomInset: true,
+        backgroundColor: background,
+        body: SafeArea(
+          // The page ships viewport-fit=cover and paints its own background to
+          // the edges; these insets keep the input and the close button clear
+          // of a notch, a punch-hole and the home indicator.
+          child: Column(
+            children: <Widget>[
+              _CloseBar(onClose: _close, foreground: foreground),
+              Expanded(
+                child: Stack(
+                  children: <Widget>[
+                    WebViewWidget(controller: _controller),
+                    if (_isLoading && !_failed)
+                      Center(
+                        child: CircularProgressIndicator(color: foreground),
                       ),
-                    ),
-                ],
+                    if (_failed)
+                      // Positioned.fill so the panel is given tight
+                      // constraints and covers the half-drawn page underneath
+                      // it, instead of shrinking to its own text.
+                      Positioned.fill(
+                        child: _LoadFailed(
+                          onRetry: _retry,
+                          background: background,
+                          foreground: foreground,
+                        ),
+                      ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -241,9 +350,12 @@ class _KeydaChatPageState extends State<KeydaChatPage> {
 }
 
 class _CloseBar extends StatelessWidget {
-  const _CloseBar({required this.onClose});
+  const _CloseBar({required this.onClose, required this.foreground});
 
   final VoidCallback onClose;
+
+  /// Icon colour, from the chat's scheme rather than the host's IconTheme.
+  final Color foreground;
 
   @override
   Widget build(BuildContext context) {
@@ -256,6 +368,7 @@ class _CloseBar extends StatelessWidget {
         alignment: Alignment.centerRight,
         child: IconButton(
           icon: const Icon(Icons.close),
+          color: foreground,
           tooltip: 'Close chat',
           onPressed: onClose,
         ),
@@ -265,10 +378,18 @@ class _CloseBar extends StatelessWidget {
 }
 
 class _LoadFailed extends StatelessWidget {
-  const _LoadFailed({required this.onRetry, required this.background});
+  const _LoadFailed({
+    required this.onRetry,
+    required this.background,
+    required this.foreground,
+  });
 
   final VoidCallback onRetry;
   final Color background;
+
+  /// Text and icon colour matching [background]; the host's text theme would
+  /// otherwise pick its own scheme's colour and vanish on the other one.
+  final Color foreground;
 
   @override
   Widget build(BuildContext context) {
@@ -281,20 +402,33 @@ class _LoadFailed extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          const Icon(Icons.cloud_off, size: 40),
+          Icon(Icons.cloud_off, size: 40, color: foreground),
           const SizedBox(height: 12),
           Text(
             'Chat could not load',
-            style: Theme.of(context).textTheme.titleMedium,
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(color: foreground),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             'Check your internet connection and try again.',
+            style: TextStyle(color: foreground),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 16),
-          ElevatedButton(onPressed: onRetry, child: const Text('Try again')),
+          ElevatedButton(
+            onPressed: onRetry,
+            // Inverted on purpose: the one button on the panel should read as
+            // the action, in either scheme, without leaning on the host theme.
+            style: ElevatedButton.styleFrom(
+              backgroundColor: foreground,
+              foregroundColor: background,
+            ),
+            child: const Text('Try again'),
+          ),
         ],
       ),
     );

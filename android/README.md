@@ -15,9 +15,8 @@ taking your app down with it.
 
 ## Install
 
-The Gradle project lives in the `android/` directory of this repository.
-
-**JitPack** (once this repo is tagged, and JitPack is pointed at `android/`):
+Published on **JitPack**; `v0.1.3` resolves today (the repository is tagged, and JitPack builds
+the `android/` project from that tag):
 
 ```kotlin
 // settings.gradle.kts
@@ -29,19 +28,18 @@ dependencyResolutionManagement {
 }
 
 // app/build.gradle.kts
-implementation("com.github.KeydaAI:keyda-business-sdks:v0.1.2")
+implementation("com.github.KeydaAI:keyda-business-sdks:v0.1.3")
 ```
 
-Replace `keyda` with the GitHub account this repository sits under. If no tag exists yet, that
-coordinate does not resolve — nothing is on JitPack or Maven Central at the time of writing, so
-until the first tag, publish it locally from a clone:
+To build against an unreleased commit instead, publish it locally from a clone:
 
 ```bash
-cd android && ./gradlew :keyda-bot:publishToMavenLocal   # in.keyda:keyda-bot:0.1.2
+cd android && ./gradlew :keyda-bot:publishToMavenLocal   # in.keyda:keyda-bot:0.1.3
 ```
 
-and add `mavenLocal()` to your repositories. `in.keyda:keyda-bot` on Maven Central is the intended
-home; it is not there yet, and this README will say so until it is.
+and add `mavenLocal()` to your repositories, with `implementation("in.keyda:keyda-bot:0.1.3")`.
+`in.keyda:keyda-bot` on Maven Central is the intended long-term home; it is not there yet, and
+this README will say so until it is.
 
 ## Use
 
@@ -109,7 +107,10 @@ throw at your users.
 * **JVM target 17** for Java and Kotlin (AGP 8 itself requires JDK 17)
 * Built with AGP 8.9.1, Kotlin 2.1.20, Gradle 8.13 (the wrapper in this directory)
 * Kotlin is not required in your app
-* **Zero dependencies.** Not AndroidX, not appcompat, nothing. The Activity extends
+* **No dependencies beyond `kotlin-stdlib`.** Not AndroidX, not appcompat, nothing else — the
+  published POM declares only `org.jetbrains.kotlin:kotlin-stdlib`, which a Kotlin app already
+  has and a Java app gets for free. The library is compiled with Kotlin `apiVersion` /
+  `languageVersion` 1.9, so a consumer on a Kotlin 1.9+ compiler can read its metadata. The Activity extends
   `android.app.Activity` and the SDK ships no resources at all, so there is no `R` class, no
   strings to merge and no colours to collide with yours. Check it yourself with
   `./gradlew :app:dependencies`.
@@ -134,6 +135,11 @@ others, no `<queries>`, no content provider and no startup initializer.
 * **The keyboard does not cover the input.** The Activity is `adjustResize`, and on Android 15+
   where the system forces apps edge-to-edge and ignores that, it pads for the IME insets itself.
 * **Safe areas are respected** — status bar, gesture bar and display cutout.
+* **The chrome follows the chat's theme.** See "Theme" below: the page announces the owner's
+  Theme setting through a one-method JavaScript bridge (`window.KeydaBotNative.onTheme`), and the
+  Activity paints its window, status and navigation bars, spinner and retry screen to match. On
+  Android 10+ the Activity switches itself to the platform DayNight theme so that a "Match the
+  visitor" bot actually sees the device's dark mode inside the WebView.
 * **Back** goes back through the chat's own history first, then closes. Predictive back (API 33+)
   is registered as well as the classic callback.
 * **A slow connection shows a spinner, then a retry.** On 2G and patchy 3G the page can take
@@ -145,14 +151,27 @@ others, no `<queries>`, no content provider and no startup initializer.
 * **R8**: nothing needs to be added to your `proguard-rules.pro`. The AAR ships
   `consumer-rules.pro`, which explains what is kept and why.
 
+## Theme
+
+Light, dark or "Match the visitor" is set once by the owner in the dashboard, and the hosted page
+resolves it — it is the page that knows the setting. The page then reports the result to this
+SDK, which colours everything it owns around the chat to match: dark background `#0b1220` with
+light status-bar text, or light `#f7f8fc` with dark status-bar text; the loading spinner and the
+retry screen follow, and the retry button takes the owner's accent. Until the page has reported
+(and against a backend that predates this), the screen follows the device's own dark-mode
+setting, which is what "Match the visitor" means. There is no theme parameter on this SDK: a
+host app cannot override what the owner chose. Below Android 6.0 the status bar icons cannot be
+made dark, so the light theme keeps a dark status bar there; below Android 8.0 the same holds for
+the navigation bar.
+
 ## Limitations
 
 Stated plainly, because finding these out after shipping is worse:
 
 * **No offline.** It is a hosted page. No connection, no chat — the customer gets the retry screen.
 * **No push notifications.** Nothing arrives while the chat is closed.
-* **No native theming.** The accent the dashboard controls is the extent of it. There is no API to
-  restyle the chat from your app.
+* **No theme API.** The owner sets the theme in the dashboard and the page carries it (see
+  "Theme" above). There is no call to restyle the chat, or the screen around it, from your app.
 * **No inline or embedded view.** The chat is a full-screen Activity; there is no fragment or view
   you can put inside one of your own screens.
 * **Six English strings.** The retry screen's copy is compiled in, because the AAR ships no
@@ -167,7 +186,7 @@ Stated plainly, because finding these out after shipping is worse:
 ```bash
 cd android
 ./gradlew :keyda-bot:assembleRelease      # keyda-bot/build/outputs/aar/
-./gradlew :keyda-bot:publishToMavenLocal  # in.keyda:keyda-bot:0.1.2
+./gradlew :keyda-bot:publishToMavenLocal  # in.keyda:keyda-bot:0.1.3
 ./gradlew :keyda-bot:lintRelease          # kept at zero errors
 ```
 

@@ -26,6 +26,12 @@
 
             exported="false" because nothing outside the app has any business launching the chat;
             it is opened by KeydaBot.show() and nothing else.
+
+            theme is the Light theme because it is the only platform theme every supported version
+            has. On API 29+ KeydaBotActivity replaces it at runtime with Theme.DeviceDefault.DayNight
+            (CONTRACT rule 7): a DayNight theme cannot be named here without a values-v29 style,
+            and this AAR ships no resources. The chrome's actual colours come from the page's theme
+            message, not from either theme.
         -->
         <activity
             android:name=".KeydaBotActivity"

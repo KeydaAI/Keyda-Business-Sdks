@@ -5,17 +5,25 @@ import android.annotation.TargetApi
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.graphics.Color
 import android.net.Uri
 import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
 import android.view.WindowInsets
+import android.view.WindowInsetsController
+import android.view.WindowManager
+import android.webkit.JavascriptInterface
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
 import android.webkit.WebResourceError
@@ -32,6 +40,8 @@ import android.widget.TextView
 import android.widget.Toast
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
+import org.json.JSONObject
+import java.lang.ref.WeakReference
 import kotlin.math.max
 
 /**
@@ -47,8 +57,33 @@ class KeydaBotActivity : Activity() {
     private lateinit var progress: ProgressBar
     private lateinit var errorPanel: LinearLayout
     private lateinit var errorText: TextView
+    private lateinit var retryButton: Button
 
     private var chatUrl: String = ""
+
+    /**
+     * CONTRACT rule 7. The theme the chrome is painted in right now. Starts from the device
+     * (`uiMode`), which is what "Match the visitor" means, and is overwritten by whatever the page
+     * reports - the page is the only party that knows the owner's dashboard setting.
+     */
+    private var darkTheme = false
+
+    /**
+     * True once a `keyda:theme` message has arrived. From then on the device's own flips are the
+     * page's business, not ours: an "Always dark" bot must stay dark when the phone goes light, and
+     * a "Match the visitor" bot re-announces itself when the OS flips.
+     */
+    private var themeFromPage = false
+
+    /** The owner's accent, when the page sent one that parsed. Null means "use the theme's ink". */
+    private var accent: Int? = null
+
+    /**
+     * Theme messages arrive on the WebView's JavaBridge thread; every view and window call below
+     * belongs on this one. Cleared in [onDestroy] so a message that lands during teardown does not
+     * run against a destroyed window.
+     */
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     /** Parsed once. Every navigation is compared against this to decide in-app versus browser. */
     private var chatPage: Uri? = null
@@ -84,9 +119,12 @@ class KeydaBotActivity : Activity() {
 
         KeydaBot.onChatCreated(this)
 
+        // Before any view exists: a theme set after the decor is built is ignored.
+        applyDayNightWindowTheme()
+        darkTheme = deviceIsDark()
+
         root = FrameLayout(this).apply {
             layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
-            setBackgroundColor(Color.WHITE)
         }
 
         web = buildWebView()
@@ -99,10 +137,25 @@ class KeydaBotActivity : Activity() {
 
         setContentView(root)
 
+        // After setContentView: the system-bar calls need the decor view to exist.
+        applyTheme()
         applyWindowInsets(root)
         registerBackHandling()
 
         load()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // uiMode is in the manifest's configChanges, so a dark-mode flip lands here instead of
+        // recreating the screen. Until the page has spoken, the device is the theme. Once it has,
+        // the page decides: a "Match the visitor" bot re-announces itself on the flip and an
+        // "Always light/dark" bot must not move, and following uiMode here would contradict both.
+        if (themeFromPage) return
+        val dark = deviceIsDark()
+        if (dark == darkTheme) return
+        darkTheme = dark
+        if (::root.isInitialized) applyTheme()
     }
 
     override fun onResume() {
@@ -119,12 +172,14 @@ class KeydaBotActivity : Activity() {
 
     override fun onDestroy() {
         unregisterBackHandling()
+        mainHandler.removeCallbacksAndMessages(null)
 
         if (::web.isInitialized) {
             // Order matters. A WebView still attached to a window when it is destroyed leaves its
             // renderer connection behind, and a WebView that is never destroyed holds this whole
             // Activity - every bitmap on screen included - for the life of the app.
             if (::root.isInitialized) root.removeView(web)
+            web.removeJavascriptInterface(THEME_BRIDGE)
             web.stopLoading()
             web.removeAllViews()
             web.destroy()
@@ -185,8 +240,9 @@ class KeydaBotActivity : Activity() {
     // ------------------------------------------------------------------------------ view setup
 
     // The chat IS a web app (CONTRACT rule 1), so JavaScript is not optional here. What keeps
-    // that safe is the rest of this method: one fixed origin, no JavaScript bridge into the app,
-    // no file or content access, and no mixed content.
+    // that safe is the rest of this method: one fixed origin, no file or content access, no mixed
+    // content, and a JavaScript bridge that exposes exactly one method, which can do nothing but
+    // repaint this screen's chrome (see ThemeBridge).
     @SuppressLint("SetJavaScriptEnabled")
     private fun buildWebView(): WebView = WebView(this).apply {
         layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
@@ -194,7 +250,15 @@ class KeydaBotActivity : Activity() {
 
         // The page paints its own background, but not until it has parsed. Without this the window
         // shows through as a flash of something else during the first paint on a slow connection.
-        setBackgroundColor(Color.WHITE)
+        // The colour is the theme's, not white: framing a dark chat in a white flash is exactly
+        // the contradiction CONTRACT rule 7 exists to remove.
+        setBackgroundColor(backgroundColor())
+
+        // CONTRACT rule 7: the page announces the owner's theme through
+        // window.KeydaBotNative.onTheme(json). The name is fixed by the contract; renaming it here
+        // silently turns the bridge off. Registered before loadUrl so the call the page makes from
+        // its <head> - before anything paints - finds the object already there.
+        addJavascriptInterface(ThemeBridge(this@KeydaBotActivity), THEME_BRIDGE)
 
         settings.apply {
             // CONTRACT rule 1, both of these. The chat is a web app, and DOM storage is what keeps
@@ -244,7 +308,7 @@ class KeydaBotActivity : Activity() {
             gravity = Gravity.CENTER
         }
 
-        val retry = Button(this).apply {
+        retryButton = Button(this).apply {
             text = LABEL_RETRY
             setOnClickListener { load() }
         }
@@ -257,17 +321,184 @@ class KeydaBotActivity : Activity() {
 
             // Opaque and full-screen so it covers the WebView's built-in "webpage not available"
             // page, which names our domain and helps nobody. Clickable so taps stop here instead
-            // of reaching the dead page underneath.
-            setBackgroundColor(Color.WHITE)
+            // of reaching the dead page underneath. Its colour is applied in applyTheme().
             isClickable = true
             visibility = View.GONE
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
 
             addView(errorText, LinearLayout.LayoutParams(MATCH, WRAP))
             addView(
-                retry,
+                retryButton,
                 LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = dp(16) }
             )
+        }
+    }
+
+    // ------------------------------------------------------------------------------------ theme
+
+    private fun deviceIsDark(): Boolean =
+        (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+
+    private fun backgroundColor(): Int = if (darkTheme) BG_DARK else BG_LIGHT
+
+    private fun inkColor(): Int = if (darkTheme) INK_DARK else INK_LIGHT
+
+    /**
+     * Why the theme is set in code and not in the manifest. The manifest names
+     * Theme.DeviceDefault.Light.NoActionBar, and on API 29+ this swaps in the platform's DayNight
+     * theme. A Light theme is not only a window colour: on Android 13+ the WebView resolves the
+     * page's `prefers-color-scheme` from the app theme's `isLightTheme`, so under a Light theme a
+     * "Match the visitor" bot reports light on a dark phone and the chat never matches the visitor
+     * at all. DayNight cannot go in the manifest: it exists from API 29 only, minSdk is 21, and the
+     * usual answer - a values-v29 style - is a resource, which this AAR ships none of (see the
+     * class comment). Below 29 the manifest's Light theme stays, and the page and the chrome still
+     * agree with each other: both light for an auto bot, both whatever the owner fixed otherwise.
+     */
+    private fun applyDayNightWindowTheme() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        setTheme(android.R.style.Theme_DeviceDefault_DayNight)
+        // DayNight has no NoActionBar variant in the platform; this is what the manifest theme's
+        // ".NoActionBar" suffix was doing. Must precede setContentView.
+        requestWindowFeature(Window.FEATURE_NO_TITLE)
+    }
+
+    /**
+     * Paints every piece of chrome this screen owns in the current theme: the window behind the
+     * page, the WebView's first-paint colour, the loading spinner, the retry screen and the system
+     * bars. One method, called from one place per trigger, so the pieces cannot drift apart.
+     */
+    private fun applyTheme() {
+        val bg = backgroundColor()
+        val ink = inkColor()
+        // The accent is the owner's; the spinner and the retry button carry it the way the page's
+        // own send button does, so the loading cover already looks like the chat it precedes.
+        val tint = accent ?: ink
+
+        root.setBackgroundColor(bg)
+        web.setBackgroundColor(bg)
+        errorPanel.setBackgroundColor(bg)
+        errorText.setTextColor(ink)
+        progress.indeterminateTintList = ColorStateList.valueOf(tint)
+        retryButton.backgroundTintList = ColorStateList.valueOf(tint)
+        // Ink over the accent when there is one (the page draws its send icon in white over the
+        // accent, and white is the dark theme's ink); the background colour over plain ink.
+        retryButton.setTextColor(if (accent != null) Color.WHITE else bg)
+
+        applySystemBars(bg)
+    }
+
+    /**
+     * Status and navigation bars in the theme's background, with icons that can be seen on it.
+     *
+     * Light icons over a dark bar exist on every version. Dark icons over a light bar arrived with
+     * API 23 for the status bar and API 26 for the navigation bar; on the versions before each,
+     * the bar keeps the theme's own (dark) colour rather than becoming a light bar with white
+     * icons that nobody can read. On API 35+ apps forced edge-to-edge the bar colours are ignored
+     * and the root's own background shows through its inset padding, which is the same colour.
+     */
+    // DEPRECATION: statusBarColor/navigationBarColor and systemUiVisibility are deprecated from
+    // API 30/35 but remain the only way to do this on the versions that still need them; each is
+    // reached only on the versions where it still does something.
+    @Suppress("DEPRECATION")
+    private fun applySystemBars(bg: Int) {
+        val w: Window = window ?: return
+        w.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+        w.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
+        w.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
+
+        val lightStatusBarPossible = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+        val lightNavBarPossible = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+
+        if (darkTheme || lightStatusBarPossible) w.statusBarColor = bg
+        if (darkTheme || lightNavBarPossible) w.navigationBarColor = bg
+
+        val lightBars = !darkTheme
+        when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> Api30.setLightBars(w, lightBars)
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {
+                var flags = w.decorView.systemUiVisibility
+                flags = setFlag(flags, View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR, lightBars)
+                if (lightNavBarPossible) {
+                    flags = setFlag(flags, View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR, lightBars)
+                }
+                w.decorView.systemUiVisibility = flags
+            }
+            // API 21-22: icons are always light and cannot be changed; the bar stayed dark above.
+        }
+    }
+
+    private fun setFlag(flags: Int, flag: Int, on: Boolean): Int =
+        if (on) flags or flag else flags and flag.inv()
+
+    /**
+     * Called on the main thread with an already-validated message. `mode` has been checked to be
+     * exactly "light" or "dark" and `accent` to be a parsed colour, or null.
+     */
+    private fun onPageTheme(dark: Boolean, pageAccent: Int?) {
+        if (isFinishing || isDestroyed) return
+        themeFromPage = true
+        accent = pageAccent
+        darkTheme = dark
+        applyTheme()
+    }
+
+    /**
+     * The one object the page can reach: `window.KeydaBotNative`, one method, one string in.
+     *
+     * A nested (static) class holding the Activity weakly, because the WebView holds this bridge
+     * strongly and the Activity holds the WebView; an inner class would close that loop and keep a
+     * finished chat screen - WebView, bitmaps and all - alive for as long as the WebView's
+     * JavaBridge thread felt like it. Once the Activity is gone the message is simply dropped.
+     *
+     * Everything here runs on the WebView's JavaBridge thread, inside the host app's process, on
+     * input a web page wrote. CONTRACT rule 6: nothing it receives may throw out of here. The
+     * parse is wrapped whole, anything that is not exactly a `keyda:theme` message with a
+     * recognised `mode` is ignored without a trace, and only the two validated values cross to
+     * the main thread.
+     */
+    private class ThemeBridge(activity: KeydaBotActivity) {
+        private val target = WeakReference(activity)
+
+        @JavascriptInterface
+        fun onTheme(json: String?) {
+            val activity = target.get() ?: return
+            val (dark, pageAccent) = parse(json) ?: return
+            activity.mainHandler.post { activity.onPageTheme(dark, pageAccent) }
+        }
+
+        /** Null for anything that is not a well-formed `keyda:theme` message. Never throws. */
+        private fun parse(json: String?): Pair<Boolean, Int?>? {
+            if (json == null) return null
+            return try {
+                val message = JSONObject(json)
+                if (message.optString("type") != "keyda:theme") return null
+                val dark = when (message.optString("mode")) {
+                    "dark" -> true
+                    "light" -> false
+                    else -> return null
+                }
+                dark to parseAccent(message.optString("accent"))
+            } catch (malformed: Exception) {
+                // JSONException for a string that is not JSON, or not an object; anything else is
+                // a surprise from the page, and a surprise from a web page is still not a crash.
+                Log.w(KeydaBot.TAG, "Ignored an unreadable theme message from the chat page")
+                null
+            }
+        }
+
+        /** `#rrggbb` only. Anything else - named colours, alpha, garbage - is "no accent". */
+        private fun parseAccent(value: String): Int? {
+            if (!ACCENT_SHAPE.matches(value)) return null
+            return try {
+                Color.parseColor(value)
+            } catch (bad: IllegalArgumentException) {
+                null
+            }
+        }
+
+        private companion object {
+            val ACCENT_SHAPE = Regex("^#[0-9a-fA-F]{6}$")
         }
     }
 
@@ -529,6 +760,7 @@ class KeydaBotActivity : Activity() {
         web = buildWebView()
         // Index 0: behind the spinner and the error panel, which stay on top of it.
         root.addView(web, 0)
+        // buildWebView() already painted it in the current theme; nothing else changed.
     }
 
     // ------------------------------------------------------------------------------- helpers
@@ -542,6 +774,16 @@ class KeydaBotActivity : Activity() {
     private companion object {
         val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
+
+        /** The JavaScript name the page looks for. Fixed by CONTRACT rule 7. */
+        const val THEME_BRIDGE = "KeydaBotNative"
+
+        // CONTRACT rule 7's two backgrounds, and an ink that reads on each. The inks are the page's
+        // own body-text colours, so the retry screen looks like the chat it stands in for.
+        const val BG_DARK = 0xFF0B1220.toInt()
+        const val BG_LIGHT = 0xFFF7F8FC.toInt()
+        const val INK_DARK = 0xFFE6EAF2.toInt()
+        const val INK_LIGHT = 0xFF111827.toInt()
 
         // Hardcoded because this AAR ships no resources, and therefore no translations. See the
         // README: these six strings are the only English the SDK puts on screen. Everything the
@@ -574,5 +816,17 @@ private object Api33 {
 
     fun unregisterBack(activity: Activity, token: Any) {
         activity.onBackInvokedDispatcher.unregisterOnBackInvokedCallback(token as OnBackInvokedCallback)
+    }
+}
+
+/** Same trick as [Api33], for [WindowInsetsController] (API 30). */
+@TargetApi(Build.VERSION_CODES.R)
+private object Api30 {
+
+    fun setLightBars(window: Window, light: Boolean) {
+        val mask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
+            WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+        // Null until the decor view exists, which is why applyTheme() runs after setContentView.
+        window.insetsController?.setSystemBarsAppearance(if (light) mask else 0, mask)
     }
 }
