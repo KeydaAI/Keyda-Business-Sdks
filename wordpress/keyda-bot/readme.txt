@@ -196,16 +196,25 @@ above — and nothing more until a visitor sends a message.
 
 = What happens when I delete the plugin? =
 
-The single option holding your client id is removed. Nothing else is stored.
+Both options this plugin owns — your client id and the credit-link setting —
+are removed, on every site of a network install. Nothing else is stored.
 
 == Changelog ==
 
 = 0.1.4 =
-* No plugin change. Version aligned with the rest of the Keyda SDKs, which
-  grew file-chooser support this release. On a website the widget's attach
-  button is an ordinary file input in an ordinary browser, which has always
-  opened its own picker — nothing to add here, and no new permission or
-  request of any kind.
+* The "Powered by Keyda" credit in the chat panel is now a setting, and it is
+  off until you turn it on. Installing this plugin no longer puts any link to
+  us on your public site. Pasting the script tag by hand is unchanged — that
+  is you choosing to add it, and it keeps the credit.
+* Licence stated as GPLv2 or later throughout, with the full licence text
+  included in the plugin.
+* Deleting the plugin now clears the credit-link setting as well as the
+  client id.
+* Documentation: "Tested up to" raised to WordPress 7.1.
+* Version aligned with the rest of the Keyda SDKs, which grew file-chooser
+  support this release. On a website the widget's attach button is an ordinary
+  file input in an ordinary browser, which has always opened its own picker —
+  nothing to add here, and no new permission or request of any kind.
 
 = 0.1.3 =
 * Documentation: the "different host" FAQ now says what the base URL really
@@ -231,6 +240,10 @@ The single option holding your client id is removed. Nothing else is stored.
 * First release.
 
 == Upgrade Notice ==
+
+= 0.1.4 =
+The "Powered by Keyda" credit is now off unless you turn it on under Settings
+&rarr; Keyda Bot. If you were showing it and want to keep it, tick the box.
 
 = 0.1.0 =
 First release.

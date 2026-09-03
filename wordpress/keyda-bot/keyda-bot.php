@@ -156,17 +156,9 @@ function keyda_bot_enqueue_widget() {
 add_action( 'wp_enqueue_scripts', 'keyda_bot_enqueue_widget' );
 
 /**
- * Attach data-key to our tag, and async unless something else already chose.
+ * Has the site owner asked for the "Powered by Keyda" credit?
  *
- * The attribute cannot go in the src: widget.js reads data-key off the element
- * it is running from, and that is also how a second embed on the same page is
- * detected. wp_script_add_data() only understands the keys core defines
- * (conditional, group, strategy), so arbitrary attributes go through this
- * filter, which is the supported route and leaves the script registered.
- *
- * @param string $tag    The full <script> tag WordPress built.
- * @param string $handle Handle of the script being output.
- * @return string
+ * @return bool
  */
 function keyda_bot_branding_enabled() {
 	return (bool) get_option( KEYDA_BOT_OPTION_BRANDING, false );
@@ -174,6 +166,12 @@ function keyda_bot_branding_enabled() {
 
 /**
  * Attach data-key to our tag, and async unless something else already chose.
+ *
+ * The attribute cannot go in the src: widget.js reads data-key off the element
+ * it is running from, and that is also how a second embed on the same page is
+ * detected. wp_script_add_data() only understands the keys core defines
+ * (conditional, group, strategy), so arbitrary attributes go through this
+ * filter, which is the supported route and leaves the script registered.
  *
  * @param string $tag    The full <script> tag WordPress built.
  * @param string $handle Handle of the script being output.

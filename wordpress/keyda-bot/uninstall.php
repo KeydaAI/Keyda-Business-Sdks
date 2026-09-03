@@ -24,7 +24,14 @@ $keyda_bot_options = array( 'keyda_bot_client_id', 'keyda_bot_branding' );
 if ( is_multisite() ) {
 	// Each site in the network stores its own key, so deleting only the
 	// current site's row would leave the rest behind for good.
-	foreach ( get_sites( array( 'fields' => 'ids', 'number' => 0 ) ) as $keyda_bot_site_id ) {
+	$keyda_bot_sites = get_sites(
+		array(
+			'fields' => 'ids',
+			'number' => 0,
+		)
+	);
+
+	foreach ( $keyda_bot_sites as $keyda_bot_site_id ) {
 		switch_to_blog( (int) $keyda_bot_site_id );
 		foreach ( $keyda_bot_options as $keyda_bot_option ) {
 			delete_option( $keyda_bot_option );
