@@ -1,11 +1,15 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import 'client_id.dart';
+import 'sdk_version.dart';
 
 /// Called when the chat page tries to leave its own origin — a "Powered by
 /// Keyda" tap, a `mailto:`, a `tel:`, a WhatsApp or UPI deep link.
@@ -48,6 +52,19 @@ const Color _lightBackground = Color(0xFFF7F8FC);
 /// (`window.KeydaBotFlutter.postMessage`). Renaming it silently breaks rule 7.
 const String _themeChannel = 'KeydaBotFlutter';
 
+/// Extensions a page may list instead of MIME types (`accept=".jpg,.png"`),
+/// so an accept list written that way still counts as asking for images.
+const Set<String> _imageExtensions = <String>{
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.gif',
+  '.webp',
+  '.bmp',
+  '.heic',
+  '.heif',
+};
+
 class _KeydaChatPageState extends State<KeydaChatPage> {
   late final WebViewController _controller;
   bool _isLoading = true;
@@ -68,11 +85,9 @@ class _KeydaChatPageState extends State<KeydaChatPage> {
   void initState() {
     super.initState();
     // No DOM storage call, deliberately: the shared WebViewController API has
-    // no switch for it, and the only way to reach one is to import
-    // webview_flutter_android directly — a second dependency this package will
-    // not take. Both endorsed implementations enable it, and the visitor's
-    // conversation survives an app restart because they do; nothing here turns
-    // it off.
+    // no switch for it, both endorsed implementations enable it, and the
+    // visitor's conversation survives an app restart because they do; nothing
+    // here turns it off.
     _controller = WebViewController()
       // The chat is a web app; with JavaScript off there is no chat at all.
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -86,8 +101,115 @@ class _KeydaChatPageState extends State<KeydaChatPage> {
           onPageFinished: _onPageFinished,
           onWebResourceError: _onWebResourceError,
         ),
-      )
-      ..loadRequest(widget.chatUrl);
+      );
+    _installFileSelector();
+    unawaited(_stampVersionThenLoad());
+  }
+
+  /// CONTRACT.md rule 9. The page's attach button ends in `<input type=file>`,
+  /// which Android hands to the WebView's chrome client. The shared
+  /// [WebViewController] has no hook for it and webview_flutter's stock chrome
+  /// client answers "not handled", so on Android the tap did nothing in every
+  /// version before 0.1.4 — the only way in is the Android implementation's
+  /// own [AndroidWebViewController.setOnShowFileSelector]. iOS needs nothing:
+  /// WebKit presents its own picker for the same input.
+  void _installFileSelector() {
+    final Object platform = _controller.platform;
+    if (platform is AndroidWebViewController) {
+      unawaited(platform.setOnShowFileSelector(_selectFiles));
+    }
+  }
+
+  /// Answers the page's file request with photos from the system gallery.
+  ///
+  /// Photos only. image_picker is the picker the Flutter team publishes (rule
+  /// 5 rules out the third-party ones) and it picks images; a request whose
+  /// accept list names no image type — a documents-only input — is answered
+  /// "nothing chosen", which the page treats as a cancel. The camera is not
+  /// offered even when the page asks for capture: that would put the host
+  /// app's CAMERA permission semantics in play, which no README here promises
+  /// to handle. Nothing is ever thrown out of here — a tap that cannot be
+  /// served is a cancel, not an exception in someone else's app (rule 6).
+  Future<List<String>> _selectFiles(FileSelectorParams params) async {
+    if (!_acceptsImages(params.acceptTypes)) {
+      return const <String>[];
+    }
+    List<XFile> picked = const <XFile>[];
+    try {
+      final ImagePicker picker = ImagePicker();
+      if (params.mode == FileSelectorMode.openMultiple) {
+        picked = await picker.pickMultiImage();
+      } else {
+        final XFile? one = await picker.pickImage(source: ImageSource.gallery);
+        picked = one == null ? const <XFile>[] : <XFile>[one];
+      }
+    } catch (error, stack) {
+      // "already_active" when a second tap lands while the gallery is up, or
+      // a device with no gallery app at all. Reported the way Flutter reports
+      // any other failure; the page gets a cancel.
+      _report(error, stack, 'picking a photo for the Keyda chat');
+    }
+    // The Android implementation parses each entry with Uri.parse and the
+    // WebView reads the file from the app's own cache, where image_picker
+    // put its copy. An empty list is the cancel.
+    return picked
+        .map((XFile file) => Uri.file(file.path).toString())
+        .toList(growable: false);
+  }
+
+  /// Whether an accept list admits an image at all: an empty list, `*/*`, any
+  /// `image/…` type or an image extension does; a list of document types
+  /// alone does not.
+  bool _acceptsImages(List<String> acceptTypes) {
+    if (acceptTypes.isEmpty) {
+      return true;
+    }
+    for (final String raw in acceptTypes) {
+      final String type = raw.trim().toLowerCase();
+      if (type.isEmpty || type == '*/*' || type.startsWith('image/')) {
+        return true;
+      }
+      if (_imageExtensions.contains(type)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Adds `KeydaBot/<version> (Flutter)` to the User-Agent, then loads.
+  ///
+  /// The page can tell it is inside this shell (the `KeydaBotFlutter` channel
+  /// exists) but not which version, and 0.1.3 could not open a file picker on
+  /// Android. The native Android SDK already answers that question with its
+  /// User-Agent; this is the same signal, so the page can show its attach
+  /// button to shells that will answer it and keep it from the ones that will
+  /// not. A version and nothing else — no device identifier rides along. The
+  /// platform's own User-Agent is read and appended to rather than replaced,
+  /// because the page and its server logs rely on it to tell phones apart.
+  Future<void> _stampVersionThenLoad() async {
+    try {
+      final String? stock = await _controller.getUserAgent();
+      if (stock != null && stock.isNotEmpty && !stock.contains('KeydaBot/')) {
+        await _controller.setUserAgent(
+          '$stock KeydaBot/$kKeydaSdkVersion (Flutter)',
+        );
+      }
+    } on Object catch (_) {
+      // Silent, and deliberately so. On iOS this reads the User-Agent by
+      // evaluating JavaScript, which a WKWebView that has not loaded anything
+      // yet may refuse — a routine condition, not a fault, and reporting it
+      // would put a non-fatal into the host app's crash reporter every time a
+      // customer opens the chat (rule 6 is about not making the host's users
+      // pay for us; the same courtesy applies to the host's error budget).
+      // The chat then loads with the stock User-Agent, which is exactly what
+      // every version before 0.1.4 sent, and the page falls back to treating
+      // this shell as unversioned. That costs nothing on iOS, where WebKit
+      // opens the picker whatever the page believes.
+    }
+    if (!mounted) {
+      return;
+    }
+    await _controller.loadRequest(widget.chatUrl);
   }
 
   @override
@@ -235,7 +357,7 @@ class _KeydaChatPageState extends State<KeydaChatPage> {
         // The handler is the host app's code. If it throws, the customer still
         // has a live conversation on screen and is owed it; report the failure
         // the way Flutter reports any other, and carry on.
-        _report(error, stack);
+        _report(error, stack, 'opening a link from the Keyda chat');
       }
       return;
     }
@@ -252,7 +374,7 @@ class _KeydaChatPageState extends State<KeydaChatPage> {
       // No dialer for a `tel:`, no mail app for a `mailto:`, no browser at
       // all: a link that cannot open is not a reason to take the conversation
       // down with it.
-      _report(error, stack);
+      _report(error, stack, 'opening a link from the Keyda chat');
     }
     if (opened || !mounted) {
       return;
@@ -264,13 +386,15 @@ class _KeydaChatPageState extends State<KeydaChatPage> {
     );
   }
 
-  void _report(Object error, StackTrace stack) {
+  /// The host app's error channel, with what this package was doing at the
+  /// time. Never a throw: the host's users are not our users (rule 6).
+  void _report(Object error, StackTrace stack, String doing) {
     FlutterError.reportError(
       FlutterErrorDetails(
         exception: error,
         stack: stack,
         library: 'keyda_bot',
-        context: ErrorDescription('opening a link from the Keyda chat'),
+        context: ErrorDescription(doing),
       ),
     );
   }

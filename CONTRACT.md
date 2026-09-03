@@ -83,6 +83,50 @@ does not work end-to-end is worse than a missing one.
    the page in the system browser sheet, which has no bridge; the chat inside
    it is themed, the sheet's own chrome is the platform's.
 
+8. **The page speaks the owner's language on its own.** The dashboard's
+   *Language your bot speaks* setting is resolved by the hosted page: it sets
+   `<html lang dir>` (Arabic and Urdu are `rtl`) and draws the whole chat in
+   that language from its own config response. A shell does nothing for this —
+   no locale to pass, no strings to ship — and must not force a direction or
+   language on the WebView that contradicts the page.
+
+9. **Answer the page's file chooser.** The chat can offer an attach button,
+   and it ends in an ordinary `<input type="file">`. A shell that does not
+   answer the file request that comes out of it gives the customer a tap that
+   does nothing at all — no picker, no error, nothing to tell them apart from
+   a frozen app. Who has to write code for it is the platform's decision, not
+   ours: WebKit presents its own picker, so every iOS surface works untouched,
+   while Android hands the request to the WebView's `WebChromeClient` and a
+   shell without one refuses every attachment in silence.
+
+   | Shell | Who opens the picker | Since |
+   |---|---|---|
+   | Android (`in.keyda:keyda-bot`) | this SDK — `WebChromeClient.onShowFileChooser` handing the page's own `accept` list to `FileChooserParams.createIntent()`: the gallery and the documents providers, no camera | 0.1.4 |
+   | iOS (`KeydaBot`) | WebKit, with no code here | always |
+   | React Native (`@keyda/bot-react-native`) | `react-native-webview`'s own chrome client | always |
+   | Flutter (`keyda_bot`) | this package on Android — `AndroidWebViewController.setOnShowFileSelector` answered from the Flutter team's `image_picker` (photos from the gallery); WebKit on iOS | 0.1.4 |
+   | Ionic / Capacitor (`@keyda/bot-capacitor`) | Capacitor's own `BridgeWebChromeClient` on the embedded path, the system browser on the full-screen one | always |
+   | WordPress and any website | the browser | always |
+
+   An installed app can be a year behind, so the page has to be able to tell
+   which of these it is inside before it draws an attach button. The two
+   shells that had to grow one say so in the User-Agent —
+   `KeydaBot/<version> (Android)` and `KeydaBot/<version> (Flutter)`, a
+   version and nothing else. The other three have always answered and need no
+   signal.
+
+   Two obligations follow that no SDK can discharge for the host app, so they
+   belong in every README rather than in anyone's code. On **every iOS
+   surface** — this SDK, React Native, Flutter and the Capacitor embedded
+   path alike — WebKit's own action sheet offers "Take Photo or Video" for an
+   image input whether or not the page asked to capture, and an app whose
+   `Info.plist` has no `NSCameraUsageDescription` is killed the moment a
+   customer picks it. That is rule 6 breaking on a key only the host can add
+   (`NSMicrophoneUsageDescription` too, if the input accepts video). On
+   **Android** the gallery and documents providers need no permission and no
+   `<queries>` entry; a camera path would need a FileProvider and the host's
+   CAMERA permission, which is why this SDK does not have one.
+
 ## What we do NOT claim
 
 * Not offline-capable — it is a hosted page.

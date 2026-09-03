@@ -1,5 +1,20 @@
 # Changelog — KeydaBot (iOS)
 
+## 0.1.4 — 2026-09-03
+
+* No code change. Version aligned with the rest of the Keyda SDKs, which grew
+  file-chooser support this release (CONTRACT rule 9); WebKit has always
+  presented its own picker for the chat's attach button, so this SDK needed
+  none.
+* **README: the one `Info.plist` key an integrator must add.** WebKit's upload
+  action sheet offers "Take Photo or Video" for any input that accepts images
+  — the page does not ask for the camera and cannot remove the option — and
+  iOS terminates an app that reaches the camera without
+  `NSCameraUsageDescription`. That is the host app crashing in a path neither
+  this SDK nor the page can intercept, so it is now stated in its own section
+  and again under Limits, with `NSMicrophoneUsageDescription` for video. The
+  photo library needs no key (`PHPicker`).
+
 ## 0.1.3 — 2026-08-27
 
 * The sheet follows the owner's theme. The hosted page reports its resolved

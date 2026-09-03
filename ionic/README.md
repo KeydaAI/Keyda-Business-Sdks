@@ -226,6 +226,30 @@ reaches every surface at once, which is the point of a single hosted renderer.
   match their chrome to the page; if that matters to you, they are the
   better fit.
 
+### Attachments, on the embedded path
+
+If the bot's chat offers an attach button, the picker opens on both paths without a line
+of code from this package — but only one of them is your app's problem.
+
+**Full-screen path**: the system browser sheet is Safari or Chrome. It owns the picker
+and the permission prompts, and there is nothing for you to add.
+
+**Embedded path**: `widget.js` runs in *your* web view, so the picker is your app's.
+Capacitor's own `BridgeWebChromeClient` answers it on Android (asking for `CAMERA` at
+runtime only if the input requests capture and your app declares the permission), and
+WKWebView answers it on iOS. The iOS half needs a key in your `Info.plist`:
+
+```xml
+<key>NSCameraUsageDescription</key>
+<string>Attach a photo to your support conversation.</string>
+```
+
+Add it whether or not you expect the camera to be used. WebKit's upload sheet offers
+**Take Photo or Video** for any input that accepts images — the page cannot suppress the
+option — and iOS terminates an app that reaches the camera with no usage description,
+mid-conversation, in front of the customer. Add `NSMicrophoneUsageDescription` as well if
+the chat accepts video. The photo library itself needs no key (`PHPicker`).
+
 ### Conversation continuity
 
 The chat keeps its conversation in DOM storage, per client id, for 24 hours.
@@ -247,6 +271,10 @@ Stated plainly, because discovering these after shipping is worse:
 - **No teardown for the embedded widget.** It mounts once per page load.
 - **`close()` is unreliable on Android**, and impossible without
   `@capacitor/browser`. See [Which path it takes](#which-path-it-takes).
+- **Attachments on the embedded path are your app's permissions.** The picker opens
+  with no change to this package, but an iOS app missing `NSCameraUsageDescription` is
+  *terminated* when a customer picks "Take Photo or Video". See
+  [Attachments, on the embedded path](#attachments-on-the-embedded-path).
 - **No analytics and no device identifiers.** Nothing here observes your users.
   That is a design constraint, not an oversight.
 

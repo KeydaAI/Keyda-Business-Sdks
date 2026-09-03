@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.1.4 — 2026-09-03
+
+- **The chat's attach button opens a picker on Android** (CONTRACT.md rule 9).
+  The shared `WebViewController` has no hook for a page's file chooser and
+  webview_flutter's stock chrome client refuses it, so the tap did nothing at
+  all before this release. The page's request is now answered through
+  `AndroidWebViewController.setOnShowFileSelector` with photos from the system
+  gallery. iOS needed no change — WebKit presents its own picker.
+- Two dependencies added for that, both published by flutter.dev from the same
+  `flutter/packages` repository the framework ships from, so the "no
+  third-party code" promise stands: `webview_flutter_android` (already
+  resolved transitively; naming it makes the import legal) and `image_picker`.
+- Photos only, and deliberately: an input that accepts no image type is
+  answered as a cancel rather than with the wrong file, and the camera is not
+  offered, because reaching it would put the host app's CAMERA permission in
+  play. A picker that will not open is reported through `FlutterError` and
+  answered as a cancel; nothing is thrown into the host app (rule 6).
+- The chat's User-Agent now carries `KeydaBot/<version> (Flutter)`, the same
+  signal the Android SDK sends, so the hosted page can tell a shell that will
+  answer its file chooser from one that will not. A version and nothing else —
+  no device identifier — appended to the platform's own User-Agent rather than
+  replacing it.
+- README: an Attachments section, including the `NSCameraUsageDescription` key
+  an iOS host app must add or be killed when a customer taps "Take Photo or
+  Video" in WebKit's own sheet.
+
 ## 0.1.3 — 2026-08-27
 
 - Light and dark: the chrome follows the owner's dashboard Theme setting

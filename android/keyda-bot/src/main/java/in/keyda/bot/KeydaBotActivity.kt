@@ -26,6 +26,8 @@ import android.view.WindowManager
 import android.webkit.JavascriptInterface
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -98,6 +100,19 @@ class KeydaBotActivity : Activity() {
 
     /** Typed [Any] deliberately - see [Api33]. */
     private var backCallback: Any? = null
+
+    /**
+     * CONTRACT rule 9. The chat's attach button ends in an `<input type="file">`, and Android hands
+     * that to the WebView's chrome client rather than opening anything itself. This is the answer
+     * the WebView is waiting for, held between the picker opening and [onActivityResult] closing
+     * it.
+     *
+     * A callback that is never answered is worse than one answered with nothing: the WebView goes
+     * on believing a chooser is open and ignores every later tap on the attach button for the life
+     * of the page. So every way out of here answers it - a cancel, a picker that will not open, a
+     * second tap and teardown included.
+     */
+    private var pendingFileChooser: ValueCallback<Array<Uri>>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -174,6 +189,11 @@ class KeydaBotActivity : Activity() {
         unregisterBackHandling()
         mainHandler.removeCallbacksAndMessages(null)
 
+        // The picker may still be on screen - the customer can leave the app from inside it. The
+        // WebView is about to be destroyed either way, but the callback is a handle its render
+        // process is holding, and dropping it unanswered leaks that side of it.
+        finishFileChooser(null)
+
         if (::web.isInitialized) {
             // Order matters. A WebView still attached to a window when it is destroyed leaves its
             // renderer connection behind, and a WebView that is never destroyed holds this whole
@@ -187,6 +207,24 @@ class KeydaBotActivity : Activity() {
 
         KeydaBot.onChatDestroyed(this)
         super.onDestroy()
+    }
+
+    /**
+     * The file picker's answer, on its way back to the page (CONTRACT rule 9).
+     *
+     * [WebChromeClient.FileChooserParams.parseResult] looks like the right call here and is not: it
+     * reads `data.getData()` only, so a multiple-selection input - which is what the chat uses -
+     * arrives as one file with every other choice silently dropped. A multi-select puts its URIs in
+     * the Intent's ClipData instead, so both are read below.
+     */
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_FILE_CHOOSER) return
+
+        // A cancel - backing out of the picker - has to be answered too. Left unanswered, the
+        // WebView never opens a chooser again and the attach button is dead for the rest of the
+        // conversation.
+        finishFileChooser(if (resultCode == RESULT_OK) chosenFiles(data) else null)
     }
 
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
@@ -247,6 +285,11 @@ class KeydaBotActivity : Activity() {
     private fun buildWebView(): WebView = WebView(this).apply {
         layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
         webViewClient = ChatWebViewClient()
+
+        // CONTRACT rule 9. Without a chrome client there is no onShowFileChooser, and a tap on the
+        // chat's attach button does nothing at all - no picker, no error, nothing to report. This
+        // is the only reason a WebChromeClient exists here; see ChatWebChromeClient.
+        webChromeClient = ChatWebChromeClient()
 
         // The page paints its own background, but not until it has parsed. Without this the window
         // shows through as a flash of something else during the first paint on a slow connection.
@@ -752,8 +795,87 @@ class KeydaBotActivity : Activity() {
         }
     }
 
+    /**
+     * CONTRACT rule 9. The page's attach button ends in an `<input type="file">`; without this the
+     * default chrome client answers "not handled" and the tap does nothing at all.
+     *
+     * There is no camera path here, deliberately. `ACTION_IMAGE_CAPTURE` needs somewhere to write
+     * the photo, which means a FileProvider - a content provider this AAR does not ship and the
+     * README promises it does not - and it drags the host app's CAMERA permission semantics in with
+     * it: a host that declares the permission without holding it makes the capture intent throw.
+     * The chooser below reaches the gallery and the documents providers, which is where a customer
+     * photographing a receipt keeps it anyway.
+     */
+    private inner class ChatWebChromeClient : WebChromeClient() {
+
+        override fun onShowFileChooser(
+            view: WebView,
+            filePathCallback: ValueCallback<Array<Uri>>,
+            fileChooserParams: WebChromeClient.FileChooserParams
+        ): Boolean {
+            // A chooser left over from a previous tap, or from a page that navigated away while one
+            // was open. Answer the old callback before replacing it: the WebView that handed it out
+            // waits for it forever otherwise.
+            finishFileChooser(null)
+            pendingFileChooser = filePathCallback
+
+            try {
+                // The page's own `accept` list and `multiple` attribute, honoured without this SDK
+                // parsing either: createIntent() builds an ACTION_GET_CONTENT chooser carrying
+                // EXTRA_MIME_TYPES and, for a multiple input, EXTRA_ALLOW_MULTIPLE. It needs no
+                // permission and no <queries> entry, which is why the manifest still declares
+                // nothing but INTERNET.
+                startActivityForResult(fileChooserParams.createIntent(), REQUEST_FILE_CHOOSER)
+            } catch (noApp: ActivityNotFoundException) {
+                // A device with no gallery and no documents provider that answers GET_CONTENT.
+                Log.w(KeydaBot.TAG, "No app on this device can pick a file", noApp)
+                finishFileChooser(null)
+                Toast.makeText(this@KeydaBotActivity, MSG_NO_FILE_PICKER, Toast.LENGTH_SHORT).show()
+            } catch (refused: RuntimeException) {
+                // The Intent is built out of a web page's accept list, and startActivity has more
+                // ways to throw than one. Thrown out of a WebView callback it would take the host
+                // app down with it, which CONTRACT rule 6 says is never ours to do.
+                Log.w(KeydaBot.TAG, "Refused to open the file picker", refused)
+                finishFileChooser(null)
+                Toast.makeText(this@KeydaBotActivity, MSG_NO_FILE_PICKER, Toast.LENGTH_SHORT).show()
+            }
+
+            // True on every path, including the failures: the callback has already been answered
+            // here, and returning false would send the WebView into its own default handling, which
+            // answers the same callback a second time.
+            return true
+        }
+    }
+
+    /** Answers the page's pending file request - `null` means "nothing chosen" - and clears it. */
+    private fun finishFileChooser(uris: Array<Uri>?) {
+        val pending = pendingFileChooser ?: return
+        pendingFileChooser = null
+        pending.onReceiveValue(uris)
+    }
+
+    /** Every URI the picker returned, or null when it returned none. */
+    private fun chosenFiles(data: Intent?): Array<Uri>? {
+        if (data == null) return null
+
+        // Multi-select. getData() is null for these; the choices are ClipData items.
+        val clip = data.clipData
+        if (clip != null) {
+            val uris = ArrayList<Uri>(clip.itemCount)
+            for (index in 0 until clip.itemCount) {
+                clip.getItemAt(index)?.uri?.let(uris::add)
+            }
+            if (uris.isNotEmpty()) return uris.toTypedArray()
+        }
+
+        return data.data?.let { arrayOf(it) }
+    }
+
     private fun replaceDeadWebView() {
         val dead = web
+        // A file request belongs to the WebView that made it, and this one is gone. Answering it
+        // now keeps the invariant that pendingFileChooser is always the live WebView's.
+        finishFileChooser(null)
         root.removeView(dead)
         dead.destroy()
 
@@ -778,6 +900,13 @@ class KeydaBotActivity : Activity() {
         /** The JavaScript name the page looks for. Fixed by CONTRACT rule 7. */
         const val THEME_BRIDGE = "KeydaBotNative"
 
+        /**
+         * The only startActivityForResult this Activity ever makes, so any value will do; it is
+         * checked in [onActivityResult] so a result meant for something else can never be read as a
+         * file pick.
+         */
+        const val REQUEST_FILE_CHOOSER = 0x4B42
+
         // CONTRACT rule 7's two backgrounds, and an ink that reads on each. The inks are the page's
         // own body-text colours, so the retry screen looks like the chat it stands in for.
         const val BG_DARK = 0xFF0B1220.toInt()
@@ -786,13 +915,14 @@ class KeydaBotActivity : Activity() {
         const val INK_LIGHT = 0xFF111827.toInt()
 
         // Hardcoded because this AAR ships no resources, and therefore no translations. See the
-        // README: these six strings are the only English the SDK puts on screen. Everything the
+        // README: these seven strings are the only English the SDK puts on screen. Everything the
         // customer reads inside the chat comes from the page, in the language it is configured in.
         const val MSG_OFFLINE = "Chat isn't connecting. Check your internet connection and try again."
         const val MSG_UNAVAILABLE = "Chat is unavailable right now. Please try again in a moment."
         const val MSG_INSECURE = "Chat couldn't be opened securely on this network."
         const val MSG_RESTARTED = "Chat had to restart on this device. Please try again."
         const val MSG_NO_APP_FOR_LINK = "No app on this phone can open that link."
+        const val MSG_NO_FILE_PICKER = "No app on this phone can pick a file."
         const val LABEL_RETRY = "Try again"
     }
 }

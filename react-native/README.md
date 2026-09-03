@@ -112,6 +112,31 @@ Never with an exception. A failed load, an HTTP error on the chat document, or a
 
 Set the theme in the Keyda Business dashboard — Match the visitor, Always light or Always dark — and the accent alongside it. The hosted page resolves that setting and announces it to this container as it loads, so the status-bar text, the close button, the loading cover and the retry screen match the chat rather than contradicting it; a Match-the-visitor bot re-announces when the OS scheme flips while the chat is open. Until the page has reported (the first frames of a load, or a self-hosted backend that predates the announcement) the container follows the device scheme, which is what Match the visitor means anyway. There is no theme prop on `<KeydaBot />` and there is not going to be one: the theme is the owner's, and it is set in one place.
 
+## Attachments
+
+If the bot's chat offers an attach button, the picker opens on both platforms with no code and no prop here: `react-native-webview` implements Android's `onShowFileChooser` itself, and WebKit presents its own picker on iOS. What is not automatic is the host app's side of it, and this package cannot add either of these for you.
+
+**iOS — one `Info.plist` key, or your app is killed.** WebKit's upload action sheet offers **Take Photo or Video** for any input that accepts images. The page neither asks for the camera nor can suppress the option, and iOS terminates an app that reaches the camera with no usage description — in front of the customer, mid-conversation. Add:
+
+```xml
+<key>NSCameraUsageDescription</key>
+<string>Attach a photo to your support conversation.</string>
+```
+
+Add `NSMicrophoneUsageDescription` too if the chat accepts video. The photo library goes through `PHPicker` and needs no key of its own.
+
+**Android — nothing, unless the page asks to capture.** Choosing from the gallery or a documents provider needs no permission on any supported version. Only an input written with `capture` reaches the camera app directly, and on Android 11+ that needs your manifest to say it can see one:
+
+```xml
+<queries>
+  <intent><action android:name="android.media.action.IMAGE_CAPTURE" /></intent>
+</queries>
+```
+
+One trap worth knowing: if your app *declares* `CAMERA` in its manifest but has not been granted it, Android refuses the capture intent rather than prompting. Either request the permission before the customer opens the chat, or do not declare it.
+
+Nothing in this package reads the files. They go straight from the picker to the hosted page's own upload, exactly as they would in a browser.
+
 ## Limitations
 
 Stated plainly, because finding these out after shipping is worse.
@@ -122,7 +147,7 @@ Stated plainly, because finding these out after shipping is worse.
 - **Closing unmounts the WebView.** React Native's `Modal` tears its children down when it hides, so reopening reloads the page. The visitor's conversation resumes from DOM storage; the reload itself is a real cost on a slow connection.
 - **No theme prop.** The owner picks the theme once in the dashboard (Match the visitor / Always light / Always dark); the hosted page resolves it and tells this container, which follows. See [Theme](#theme). An app cannot override that choice.
 - **Core `SafeAreaView`, which React Native has deprecated.** Current React Native logs a one-time "SafeAreaView has been deprecated" warning that will be attributed to this package. It is the only dependency-free source of the iOS notch and home-indicator insets, and this package adds no dependency to replace it; it will move to `react-native-safe-area-context` (as an optional peer) before React Native removes the core view. Until then the `react-native` peer has no upper bound, so the removal release would break the modal layout — pin your `react-native` upgrade to a version of this package that says it is supported.
-- **Text only.** The chat page sends and receives text. No attachments, no images, no voice — so this SDK asks for no camera, microphone or storage permission.
+- **Attachments are your app's permissions, not this package's.** The chat page's own attach button opens the picker through `react-native-webview` on Android and WebKit on iOS, so nothing here has to change — but an iOS app without `NSCameraUsageDescription` is *terminated* when a customer picks "Take Photo or Video" from that sheet. See [Attachments](#attachments). This package still declares no permission of its own, requests none at runtime, and never reads a chosen file.
 - **Ships TypeScript source, no build step.** Metro compiles it along with your app, which is the normal pattern for a React Native library. If you run Jest, add the package to `transformIgnorePatterns`:
   ```js
   transformIgnorePatterns: ['node_modules/(?!(react-native|@keyda/bot-react-native)/)'],

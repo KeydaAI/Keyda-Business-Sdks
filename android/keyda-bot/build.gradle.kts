@@ -10,7 +10,7 @@ plugins {
 // One source of truth for the version. It is both the published Maven version and the string the
 // WebView appends to its User-Agent; when those two drift, a support ticket says the app runs a
 // version that was never released.
-val sdkVersion = "0.1.3"
+val sdkVersion = "0.1.4"
 
 android {
     namespace = "in.keyda.bot"

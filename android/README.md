@@ -15,7 +15,7 @@ taking your app down with it.
 
 ## Install
 
-Published on **JitPack**; `v0.1.3` resolves today (the repository is tagged, and JitPack builds
+Published on **JitPack**; `v0.1.4` resolves today (the repository is tagged, and JitPack builds
 the `android/` project from that tag):
 
 ```kotlin
@@ -28,16 +28,16 @@ dependencyResolutionManagement {
 }
 
 // app/build.gradle.kts
-implementation("com.github.KeydaAI:keyda-business-sdks:v0.1.3")
+implementation("com.github.KeydaAI:keyda-business-sdks:v0.1.4")
 ```
 
 To build against an unreleased commit instead, publish it locally from a clone:
 
 ```bash
-cd android && ./gradlew :keyda-bot:publishToMavenLocal   # in.keyda:keyda-bot:0.1.3
+cd android && ./gradlew :keyda-bot:publishToMavenLocal   # in.keyda:keyda-bot:0.1.4
 ```
 
-and add `mavenLocal()` to your repositories, with `implementation("in.keyda:keyda-bot:0.1.3")`.
+and add `mavenLocal()` to your repositories, with `implementation("in.keyda:keyda-bot:0.1.4")`.
 `in.keyda:keyda-bot` on Maven Central is the intended long-term home; it is not there yet, and
 this README will say so until it is.
 
@@ -116,7 +116,9 @@ throw at your users.
   `./gradlew :app:dependencies`.
 
 The SDK's manifest adds one permission to your app, `android.permission.INTERNET`. It adds no
-others, no `<queries>`, no content provider and no startup initializer.
+others, no `<queries>`, no content provider and no startup initializer. The file picker below
+needs none of those either: it is the system chooser (`ACTION_GET_CONTENT`), which asks for no
+permission and reaches the gallery and the documents providers without one.
 
 ## What it does inside, briefly
 
@@ -140,6 +142,12 @@ others, no `<queries>`, no content provider and no startup initializer.
   Activity paints its window, status and navigation bars, spinner and retry screen to match. On
   Android 10+ the Activity switches itself to the platform DayNight theme so that a "Match the
   visitor" bot actually sees the device's dark mode inside the WebView.
+* **A tap on the chat's attach button opens a picker.** The `<input type="file">` behind it
+  reaches `WebChromeClient.onShowFileChooser`, which hands the page's own `accept` list and
+  `multiple` attribute to the system chooser — gallery, Photos, Drive, Files, whatever the phone
+  has — and returns every file the customer chose, not just the first. Cancelling is answered too:
+  a file request left unanswered makes the WebView ignore the attach button for the rest of the
+  conversation. There is no camera path, on purpose (see Limitations).
 * **Back** goes back through the chat's own history first, then closes. Predictive back (API 33+)
   is registered as well as the classic callback.
 * **A slow connection shows a spinner, then a retry.** On 2G and patchy 3G the page can take
@@ -174,11 +182,15 @@ Stated plainly, because finding these out after shipping is worse:
   "Theme" above). There is no call to restyle the chat, or the screen around it, from your app.
 * **No inline or embedded view.** The chat is a full-screen Activity; there is no fragment or view
   you can put inside one of your own screens.
-* **Six English strings.** The retry screen's copy is compiled in, because the AAR ships no
-  resources and therefore no translations. Everything the customer reads *inside* the chat comes
+* **Seven English strings.** The retry screen's copy, and the toast shown when nothing on the
+  phone can open a link or pick a file, are compiled in, because the AAR ships no resources and
+  therefore no translations. Everything the customer reads *inside* the chat comes
   from the page, in the language it is configured in.
-* **No file picker.** The SDK implements no `onShowFileChooser`, so if the hosted chat ever offers
-  an attach button, it will not open a picker.
+* **No camera in the picker.** Attachments come from the gallery and the documents providers. A
+  "take a photo now" path would need a FileProvider inside this AAR — which ships no content
+  provider by design — and would drag your app's CAMERA permission in with it: a host that
+  declares the permission without holding it makes the capture intent throw. Customers can still
+  photograph something with the camera app and attach it from the gallery.
 * **One chat at a time.** `show()` while the chat is open is a no-op, by design.
 
 ## Build from source
@@ -186,7 +198,7 @@ Stated plainly, because finding these out after shipping is worse:
 ```bash
 cd android
 ./gradlew :keyda-bot:assembleRelease      # keyda-bot/build/outputs/aar/
-./gradlew :keyda-bot:publishToMavenLocal  # in.keyda:keyda-bot:0.1.3
+./gradlew :keyda-bot:publishToMavenLocal  # in.keyda:keyda-bot:0.1.4
 ./gradlew :keyda-bot:lintRelease          # kept at zero errors
 ```
 

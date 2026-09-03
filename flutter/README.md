@@ -23,7 +23,7 @@ From [pub.dev](https://pub.dev/packages/keyda_bot):
 
 ```yaml
 dependencies:
-  keyda_bot: ^0.1.3
+  keyda_bot: ^0.1.4
 ```
 
 To build against an unreleased commit instead, point at this repository — the
@@ -37,12 +37,14 @@ dependencies:
       path: flutter
 ```
 
-Then `flutter pub get`. That resolves two packages — `webview_flutter` to
-render the chat and `url_launcher` to hand a tapped link to the system
-browser — plus the Android and iOS implementation packages they endorse.
-Every one of them is published by flutter.dev from the Flutter team's own
-`flutter/packages` repository; there is no third-party code in this SDK's
-dependency tree. Nothing else: no HTTP client, no analytics, no crash
+Then `flutter pub get`. That resolves four packages — `webview_flutter` to
+render the chat, `url_launcher` to hand a tapped link to the system browser,
+`webview_flutter_android` for the one Android hook the shared WebView API does
+not expose (the page's file chooser, see [Attachments](#attachments)) and
+`image_picker` to answer it — plus the Android and iOS implementation packages
+they endorse. Every one of them is published by flutter.dev from the Flutter
+team's own `flutter/packages` repository; there is no third-party code in this
+SDK's dependency tree. Nothing else: no HTTP client, no analytics, no crash
 reporter, nothing that reads a device identifier.
 
 Android and iOS only. `webview_flutter` has no Flutter web implementation, so
@@ -169,6 +171,38 @@ chrome follows the device scheme, which is what "Match the visitor" means
 anyway. There is no theme parameter on `KeydaBot.show` and no plan for one:
 the host app does not get to contradict the owner.
 
+## Attachments
+
+If the bot's chat offers an attach button, tapping it opens a picker.
+
+On **Android** that took code, and it is why this package now names
+`webview_flutter_android` and `image_picker` in its pubspec: the shared
+`WebViewController` has no hook for a page's file chooser, and without one the
+tap did nothing at all in every version before 0.1.4. The customer picks
+photos from the system gallery; no permission is requested, on any supported
+version. Documents are not offered — `image_picker` picks images — so an input
+that accepts only PDFs is answered as a cancel rather than with the wrong file.
+The camera is not offered either: reaching it would put your app's CAMERA
+permission in play, which this package will not do behind your back.
+
+On **iOS** WebKit presents the picker itself and there is nothing here to
+switch on — but there is one key your app must carry:
+
+```xml
+<key>NSCameraUsageDescription</key>
+<string>Attach a photo to your support conversation.</string>
+```
+
+Add it whether or not you expect the camera to be used. WebKit's upload sheet
+offers **Take Photo or Video** for any input that accepts images, the page
+cannot suppress the option, and iOS terminates an app that reaches the camera
+with no usage description — mid-conversation, in front of the customer. Add
+`NSMicrophoneUsageDescription` too if the chat accepts video. The photo library
+itself needs no key.
+
+Nothing in this package reads a chosen file. It goes straight from the picker
+to the hosted page's own upload, exactly as it would in a browser.
+
 ## Limitations
 
 Stated plainly, because finding these out later is worse:
@@ -187,6 +221,11 @@ Stated plainly, because finding these out later is worse:
 - **A tapped link leaves your app.** Other-origin links open in the system
   browser, not in a sheet over the chat. The conversation is untouched and
   waiting when the customer switches back, but the switch is theirs to make.
+- **Attachments are photos, on Android.** The picker this package installs is
+  the gallery; there is no documents picker and no camera. See
+  [Attachments](#attachments) — and note the one `Info.plist` key an iOS host
+  must add, without which iOS kills the app when a customer taps "Take Photo
+  or Video" in WebKit's own sheet.
 - **One chat at a time**, presented on the root navigator.
 - **Android back closes the chat** rather than stepping through the page's own
   history. The conversation is restored on the next `show`.

@@ -1,6 +1,6 @@
 {
   "name": "@keyda/bot-react-native",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Open your Keyda Business bot in a React Native app: a Modal + WebView around the hosted chat page.",
   "license": "MIT",
   "main": "src/index.tsx",

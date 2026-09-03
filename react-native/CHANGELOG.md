@@ -1,5 +1,23 @@
 # Changelog — @keyda/bot-react-native
 
+## 0.1.4 — 2026-09-03
+
+* No code change. Version aligned with the rest of the Keyda SDKs, which grew
+  file-chooser support this release (CONTRACT rule 9); `react-native-webview`
+  has implemented Android's `onShowFileChooser` for years and WebKit answers
+  on iOS, so the chat's attach button already opens a picker here.
+* **README: "Text only… asks for no camera, microphone or storage permission"
+  is gone**, because it stopped being true the moment the hosted chat grew an
+  attach button — and it would have gone stale with no release of this package
+  at all. In its place, an Attachments section with the host app's real
+  obligations: `NSCameraUsageDescription` in the iOS `Info.plist` (WebKit's
+  upload sheet offers "Take Photo or Video" for image inputs, and iOS
+  terminates an app that reaches the camera without the key),
+  `NSMicrophoneUsageDescription` for video, an Android `<queries>` entry for
+  `android.media.action.IMAGE_CAPTURE` if the page asks to capture, and the
+  declared-but-ungranted `CAMERA` trap. This package still declares no
+  permission, requests none, and never reads a chosen file.
+
 ## 0.1.3 — 2026-08-27
 
 * Theme bridge (CONTRACT.md rule 7): the hosted page resolves the owner's

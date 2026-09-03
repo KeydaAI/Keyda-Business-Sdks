@@ -1,6 +1,6 @@
 name: keyda_bot
 description: Keyda Business chat for Flutter — a thin WebView wrapper that opens your hosted Keyda chat page over your app. No analytics, no device identifiers, no third-party packages.
-version: 0.1.3
+version: 0.1.4
 homepage: https://keyda.in/business
 repository: https://github.com/KeydaAI/keyda-business-sdks
 issue_tracker: https://github.com/KeydaAI/keyda-business-sdks/issues
@@ -13,17 +13,33 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  # Two packages, and the only two there will be. Both are published by
-  # flutter.dev out of the same flutter/packages repository the framework
-  # itself ships from, so neither is a third party and neither is a tracker
-  # (CONTRACT.md rule 5): the chat is a hosted page, so a WebView renders all
-  # of it, and rule 2 — other-origin links must reach the system browser —
-  # needs a way to hand a URL to the OS. Flutter has no framework API for
-  # that, the way React Native has Linking.openURL; url_launcher IS that API.
+  # Four packages, every one published by flutter.dev out of the same
+  # flutter/packages repository the framework itself ships from, so none is a
+  # third party and none is a tracker (CONTRACT.md rule 5). Each one exists
+  # for a rule the shared WebView API cannot satisfy on its own:
+  #   webview_flutter          the chat is a hosted page; a WebView renders it.
+  #   url_launcher             rule 2 — other-origin links must reach the
+  #                            system browser, and Flutter has no framework
+  #                            API for that the way React Native has
+  #                            Linking.openURL; url_launcher IS that API.
+  #   webview_flutter_android  rule 9 — the page's <input type=file> reaches
+  #                            Android through a chrome-client hook that only
+  #                            the Android implementation exposes
+  #                            (setOnShowFileSelector). Already resolved as a
+  #                            transitive of webview_flutter; naming it here
+  #                            only makes the import legal. The floor is the
+  #                            release that added the hook; the ceiling
+  #                            follows webview_flutter's own major.
+  #   image_picker             rule 9 — something has to produce the file the
+  #                            page asked for. The Flutter team's picker picks
+  #                            photos through the system gallery, with no
+  #                            permission of its own on either platform.
   # Nothing here reaches for an HTTP client, an analytics package or anything
   # that reads a device identifier.
   webview_flutter: ^4.4.0
+  webview_flutter_android: '>=3.2.0 <5.0.0'
   url_launcher: ^6.2.0
+  image_picker: ^1.0.0
 
 dev_dependencies:
   flutter_test:

@@ -3,7 +3,7 @@
  * Plugin Name:       Keyda Bot
  * Plugin URI:        https://keyda.in/business/
  * Description:       Adds your Keyda Bot chat assistant to your site. Paste your client id under Settings &rarr; Keyda Bot; the greeting, colours and answers all come from your Keyda Business dashboard.
- * Version:           0.1.3
+ * Version:           0.1.4
  * Requires at least: 5.6
  * Requires PHP:      7.4
  * Author:            Keyda

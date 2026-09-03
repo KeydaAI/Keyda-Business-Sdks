@@ -4,7 +4,7 @@ Tags: chatbot, live chat, customer support, ai, assistant
 Requires at least: 5.6
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.1.3
+Stable tag: 0.1.4
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -188,6 +188,13 @@ above — and nothing more until a visitor sends a message.
 The single option holding your client id is removed. Nothing else is stored.
 
 == Changelog ==
+
+= 0.1.4 =
+* No plugin change. Version aligned with the rest of the Keyda SDKs, which
+  grew file-chooser support this release. On a website the widget's attach
+  button is an ordinary file input in an ordinary browser, which has always
+  opened its own picker — nothing to add here, and no new permission or
+  request of any kind.
 
 = 0.1.3 =
 * Documentation: the "different host" FAQ now says what the base URL really

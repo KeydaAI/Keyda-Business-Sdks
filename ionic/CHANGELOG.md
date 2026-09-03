@@ -1,5 +1,19 @@
 # Changelog — @keyda/bot-capacitor
 
+## 0.1.4 — 2026-09-03
+
+* No code change. Version aligned with the rest of the Keyda SDKs, which grew
+  file-chooser support this release (CONTRACT rule 9). Both paths already
+  answer the chat's attach button: the embedded one through Capacitor's own
+  `BridgeWebChromeClient` on Android and WKWebView on iOS, the full-screen one
+  through the system browser, which owns its picker and its prompts.
+* README: an "Attachments, on the embedded path" section. The embedded widget
+  runs in *your* web view, so the picker is your app's — and an iOS app
+  without `NSCameraUsageDescription` is terminated when a customer picks "Take
+  Photo or Video" from WebKit's upload sheet, which appears for any input that
+  accepts images whether or not the page asked to capture. Also noted under
+  Limitations.
+
 ## 0.1.3 — 2026-08-27
 
 * `baseUrl` with a query string or a `#fragment` is now rejected at `init()`

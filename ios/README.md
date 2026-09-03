@@ -31,7 +31,7 @@ Or in a `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/KeydaAI/keyda-business-sdks", from: "0.1.3")
+    .package(url: "https://github.com/KeydaAI/keyda-business-sdks", from: "0.1.4")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [.product(name: "KeydaBot", package: "keyda-business-sdks")])
@@ -107,6 +107,29 @@ trips an assertion in debug and CI, logs at fault level in release (subsystem
 throws into your code and never crashes your shipped app — but it will not open a 404
 page in front of your customer either.
 
+## Attachments: one `Info.plist` key your app must have
+
+If the bot's chat offers an attach button, WebKit opens the picker itself — this SDK
+writes no code for it and there is nothing to switch on. What it does need is a key in
+**your** app's `Info.plist`:
+
+```xml
+<key>NSCameraUsageDescription</key>
+<string>Attach a photo to your support conversation.</string>
+```
+
+Add it whether or not you think anyone will use the camera. WebKit's upload action sheet
+offers **Take Photo or Video** for any input that accepts images — the page does not ask
+for the camera and cannot turn the option off — and iOS kills an app that reaches the
+camera with no usage description. That is your app terminating in front of a customer,
+in a code path neither this SDK nor the page can prevent; the key is the whole fix. Add
+`NSMicrophoneUsageDescription` as well if the chat accepts video.
+
+Nothing else is required. Choosing from the photo library goes through `PHPicker`, which
+needs no `NSPhotoLibraryUsageDescription`, and picking a document needs nothing at all.
+The keys are only ever read as the reason shown in the system prompt; adding them does
+not make this SDK use the camera, and it still reads no device identifier.
+
 ## What it does that you would otherwise have to get right yourself
 
 * **Links leave the chat.** The page carries a real "Powered by Keyda" link. Any
@@ -139,6 +162,10 @@ page in front of your customer either.
 * **App targets only.** The SDK presents UI and opens links through
   `UIApplication.shared`, so it is marked unavailable in app extensions and will not
   build into one.
+* **The camera prompt's wording is yours.** Attachments work with no code here (see
+  above), but the sheet's "Take Photo or Video" option needs
+  `NSCameraUsageDescription` in your app — this SDK cannot supply it, and without it
+  iOS terminates your app when a customer taps that option.
 * **iOS and iPadOS.** Mac Catalyst is not tested and not claimed.
 * **Clearing the app's website data clears the conversation on that device.**
 

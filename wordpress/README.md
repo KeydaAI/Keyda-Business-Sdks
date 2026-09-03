@@ -138,7 +138,7 @@ Steps:
 
    ```sh
    cd wordpress
-   zip -r /tmp/keyda-bot-0.1.3.zip keyda-bot -x '*.DS_Store' -x '__MACOSX/*'
+   zip -r /tmp/keyda-bot-0.1.4.zip keyda-bot -x '*.DS_Store' -x '__MACOSX/*'
    ```
 
    Unzip it somewhere clean and confirm the top-level folder is `keyda-bot/`.
@@ -151,8 +151,8 @@ Steps:
    rsync -a --delete --exclude '.DS_Store' keyda-bot/ keyda-bot-svn/trunk/
    cd keyda-bot-svn
    svn add --force trunk
-   svn cp trunk "tags/0.1.3"
-   svn ci -m "Release 0.1.3"
+   svn cp trunk "tags/0.1.4"
+   svn ci -m "Release 0.1.4"
    ```
 
    WordPress.org serves whichever tag `Stable tag:` in **trunk's** `readme.txt`
