@@ -81,6 +81,64 @@ function keyda_bot_register_settings() {
 		'keyda_bot_main',
 		array( 'label_for' => KEYDA_BOT_OPTION )
 	);
+
+	register_setting(
+		KEYDA_BOT_OPTION_GROUP,
+		KEYDA_BOT_OPTION_BRANDING,
+		array(
+			'type'              => 'boolean',
+			'sanitize_callback' => 'keyda_bot_sanitize_branding',
+			'default'           => false,
+			'show_in_rest'      => false,
+		)
+	);
+
+	add_settings_field(
+		KEYDA_BOT_OPTION_BRANDING,
+		__( 'Credit link', 'keyda-bot' ),
+		'keyda_bot_render_branding_field',
+		KEYDA_BOT_PAGE,
+		'keyda_bot_main',
+		array( 'label_for' => KEYDA_BOT_OPTION_BRANDING )
+	);
+}
+
+/**
+ * A checkbox is present or absent; anything else is not an answer.
+ *
+ * @param mixed $value Raw submitted value.
+ * @return bool
+ */
+function keyda_bot_sanitize_branding( $value ) {
+	return ! empty( $value );
+}
+
+/**
+ * The credit-link checkbox.
+ *
+ * Unticked until the site owner ticks it. The plugin directory does not allow
+ * a plugin to put an external link on a public site unless the owner asked for
+ * it, so the question is asked here rather than assumed.
+ *
+ * @return void
+ */
+function keyda_bot_render_branding_field() {
+	$on = (bool) get_option( KEYDA_BOT_OPTION_BRANDING, false );
+	?>
+	<label for="<?php echo esc_attr( KEYDA_BOT_OPTION_BRANDING ); ?>">
+		<input
+			type="checkbox"
+			id="<?php echo esc_attr( KEYDA_BOT_OPTION_BRANDING ); ?>"
+			name="<?php echo esc_attr( KEYDA_BOT_OPTION_BRANDING ); ?>"
+			value="1"
+			<?php checked( $on ); ?>
+		/>
+		<?php esc_html_e( 'Show a "Powered by Keyda" link at the bottom of the chat', 'keyda-bot' ); ?>
+	</label>
+	<p class="description">
+		<?php esc_html_e( 'Off by default. Tick it only if you are happy for the chat to link to keyda.in from your public site.', 'keyda-bot' ); ?>
+	</p>
+	<?php
 }
 add_action( 'admin_init', 'keyda_bot_register_settings' );
 

@@ -8,8 +8,8 @@
  * Requires PHP:      7.4
  * Author:            Keyda
  * Author URI:        https://keyda.in/
- * License:           MIT
- * License URI:       https://opensource.org/licenses/MIT
+ * License:           GPLv2 or later
+ * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       keyda-bot
  *
  * This plugin renders no chat UI of its own. It puts one hosted script on the
@@ -29,6 +29,16 @@ defined( 'ABSPATH' ) || exit;
  * runs without the plugin loaded and so cannot read this constant.
  */
 define( 'KEYDA_BOT_OPTION', 'keyda_bot_client_id' );
+
+/**
+ * Whether to show the "Powered by Keyda" credit in the chat panel.
+ *
+ * Off unless the site owner turns it on, and that default is the point: the
+ * plugin directory forbids a plugin from putting an external link on somebody's
+ * public site without asking first. A script-tag install is the owner pasting
+ * the tag themselves and keeps the credit; here they have to say yes.
+ */
+define( 'KEYDA_BOT_OPTION_BRANDING', 'keyda_bot_branding' );
 
 /** Script handle. Other plugins dequeue by handle, so it must stay stable. */
 define( 'KEYDA_BOT_HANDLE', 'keyda-bot' );
@@ -158,6 +168,17 @@ add_action( 'wp_enqueue_scripts', 'keyda_bot_enqueue_widget' );
  * @param string $handle Handle of the script being output.
  * @return string
  */
+function keyda_bot_branding_enabled() {
+	return (bool) get_option( KEYDA_BOT_OPTION_BRANDING, false );
+}
+
+/**
+ * Attach data-key to our tag, and async unless something else already chose.
+ *
+ * @param string $tag    The full <script> tag WordPress built.
+ * @param string $handle Handle of the script being output.
+ * @return string
+ */
 function keyda_bot_script_loader_tag( $tag, $handle ) {
 	if ( KEYDA_BOT_HANDLE !== $handle ) {
 		return $tag;
@@ -204,6 +225,11 @@ function keyda_bot_script_loader_tag( $tag, $handle ) {
 	$our_tag = false === $end ? substr( $tag, $open ) : substr( $tag, $open, $end - $open + 1 );
 
 	$attributes = ' data-key="' . esc_attr( $client_id ) . '"';
+
+	// Opt-in, so the attribute is present until the owner asks for the credit.
+	if ( ! keyda_bot_branding_enabled() ) {
+		$attributes .= ' data-branding="off"';
+	}
 
 	// Only volunteer async. If a performance plugin has already deferred this
 	// tag, adding async on top of it changes execution order behind its back.

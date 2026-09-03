@@ -2,11 +2,11 @@
 Contributors: keyda
 Tags: chatbot, live chat, customer support, ai, assistant
 Requires at least: 5.6
-Tested up to: 6.8
+Tested up to: 7.1
 Requires PHP: 7.4
 Stable tag: 0.1.4
-License: MIT
-License URI: https://opensource.org/licenses/MIT
+License: GPLv2 or later
+License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
 Adds your Keyda Bot chat assistant to your site. One field: your client id. Everything else comes from your Keyda Business dashboard.
 
@@ -49,6 +49,9 @@ it here.`
   cookies, no visitor profile of any kind. The one thing that is reported is
   that the widget loaded, so your dashboard can tell you your bot is installed
   — described in full under "External services".
+* No link to us on your site unless you ask for one. The chat can show a
+  "Powered by Keyda" credit at the foot of its panel, and it is off until you
+  tick the box on the settings screen.
 * No per-page targeting. The widget loads on every front-end page, which is the
   same behaviour as pasting the script tag into your footer.
 * No theming beyond what your dashboard already controls. Light, dark or
@@ -98,6 +101,14 @@ Keyda's privacy policy: https://keyda.in/privacy-policy
 If the field is empty, the plugin adds nothing at all to your pages.
 
 == Frequently Asked Questions ==
+
+= Does this put a link to Keyda on my site? =
+
+Not unless you turn it on. The chat panel can carry a small "Powered by Keyda"
+credit that links to keyda.in, and the setting for it is unticked when you
+install the plugin. Nothing else the plugin renders links anywhere off your
+site. If you tick it, the credit appears at the foot of the chat panel, where
+only a visitor who opens the chat will see it.
 
 = Where do I find my client id? =
 
