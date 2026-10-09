@@ -18,6 +18,18 @@ export interface EmbedOptions {
 }
 
 /**
+ * Your signed-in customer, for the embedded widget's `setVisitor`. Each is
+ * optional; the chat drops one that does not look like what it claims — a
+ * name of 1–80 characters on one line, a phone number with 8–15 digits, an
+ * email up to 254 characters.
+ */
+export interface KeydaBotVisitor {
+  name?: string;
+  phone?: string;
+  email?: string;
+}
+
+/**
  * The controls `widget.js` publishes once it is running in the page.
  *
  * This is the widget's own API, not this package's — see `getEmbeddedWidget()`
@@ -30,6 +42,25 @@ export interface EmbeddedWidget {
   close(): void;
   toggle(): void;
   readonly isOpen: boolean;
+  /**
+   * Puts a question in the chat's message box, unsent; true when it took it.
+   * Absent on a widget older than October 2026, hence optional.
+   */
+  prefill?(question: string): boolean;
+  /**
+   * Closes the sheet the chat has open (an item, the cart, a booking) and
+   * returns true; false when none is open. Route Capacitor's Android
+   * `backButton` here first. Absent on a widget older than October 2026.
+   */
+  back?(): boolean;
+  /**
+   * Your signed-in customer — `{name, phone, email}`, each optional; `{}`
+   * forgets them. Offered, never sent, in the forms that ask for them; true
+   * when something usable was left. Absent on a widget older than October
+   * 2026. The one way in for them: the full-screen `KeydaBot.open()` does not
+   * take them, as its link would keep them in the browser's history.
+   */
+  setVisitor?(details: KeydaBotVisitor | null): boolean;
 }
 
 /**

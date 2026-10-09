@@ -4,7 +4,7 @@ Tags: chatbot, live chat, customer support, ai, assistant
 Requires at least: 5.6
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.1.4
+Stable tag: 0.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -200,6 +200,17 @@ Both options this plugin owns — your client id and the credit-link setting —
 are removed, on every site of a network install. Nothing else is stored.
 
 == Changelog ==
+
+= 0.2.0 =
+* Version aligned with the rest of the Keyda SDKs. The plugin itself only
+  gains a note for WordPress's Plugin Check, which now reports no errors and
+  no warnings: the chat script is hosted and versioned by Keyda, so it is
+  loaded without a WordPress version number on purpose (one would only stop
+  your visitors' browsers from caching it).
+* The chat itself is served by Keyda and improves with no plugin update. On a
+  tablet the chat panel now stays above the on-screen keyboard (on an iPad the
+  message box went behind it), and on a phone opening the chat no longer
+  raises the keyboard over the welcome message.
 
 = 0.1.4 =
 * The "Powered by Keyda" credit in the chat panel is now a setting, and it is

@@ -2,8 +2,8 @@
 # in android/ — so without this it finds no build file and every consumer's
 # dependency resolution fails with a JitPack build log nobody reads.
 #
-# openjdk17 is not a preference: AGP 8 requires a JDK 17 to run, and JitPack's
-# default is older.
+# openjdk17 is not a preference: AGP 9 (and Gradle 9) require a JDK 17 to run,
+# and JitPack's default is older.
 jdk:
   - openjdk17
 install:

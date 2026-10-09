@@ -31,10 +31,56 @@ export { DEFAULT_BASE_URL, chatUrl } from './config.js';
 export * from './embed.js';
 
 export interface KeydaBotOptions {
-  /** From Install in the Keyda Business dashboard: `kb_live_…`. */
-  clientId: string;
-  /** Defaults to `https://keyda.in/business`. Set it for staging or a self-host. */
+  /**
+   * From Install in the Keyda Business dashboard: `kb_live_…`. Optional once
+   * `init()` has been called; given here, it replaces that one.
+   */
+  clientId?: string;
+  /**
+   * Defaults to the one given to `init()`, else `https://keyda.in/business`.
+   * Set it for staging or a self-host.
+   */
   baseUrl?: string;
+  /**
+   * Optional: put in the chat's message box for the customer to send — they
+   * still tap send. It travels in the URL's #fragment, never in a server log.
+   * Up to 500 characters, as one line: the chat joins lines and collapses
+   * runs of spaces.
+   */
+  question?: string;
+}
+
+/**
+ * The first 500 characters — whole ones, since a cut through an emoji leaves
+ * half a character, on which encodeURIComponent throws (and open() would have
+ * thrown with it, though it promises to resolve).
+ */
+function cleanQuestion(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return Array.from(value.trim())
+    .filter((c) => !(c.length === 1 && c.charCodeAt(0) >= 0xd800 && c.charCodeAt(0) <= 0xdfff))
+    .slice(0, 500)
+    .join('');
+}
+
+/**
+ * `#q=…`, or nothing. Never throws.
+ *
+ * The question only. The customer's name, phone and email never go in this
+ * link: it opens in the system browser (Custom Tabs, SFSafariViewController,
+ * a tab on the web), which can keep the whole URL, fragment included, in its
+ * history — and Chrome syncs its history to the customer's other devices.
+ * The embedded widget's `setVisitor` hands them over without a URL.
+ */
+function startFragment(question: unknown): string {
+  const q = cleanQuestion(question);
+  if (!q) return '';
+  try {
+    return `#q=${encodeURIComponent(q)}`;
+  } catch {
+    // Left out rather than thrown.
+    return '';
+  }
 }
 
 /**
@@ -170,7 +216,8 @@ function currentlyShowing(): boolean {
 /**
  * Store configuration and validate the id.
  *
- * Optional — `open({ clientId })` does the same thing inline. Call this at
+ * Optional — `open({ clientId })` does the same thing inline, and a later
+ * `open()` keeps what this stored unless it says otherwise. Call this at
  * app bootstrap if you would rather a bad client id blow up on launch, where
  * you will see it, than on the first tap of the Chat button.
  */
@@ -192,7 +239,20 @@ function init(clientId: string, baseUrl?: string): void {
  * time we ask for a window and the browser refuses it.
  */
 function open(options?: KeydaBotOptions): Promise<boolean> {
-  if (options) init(options.clientId, options.baseUrl);
+  if (options) {
+    // Over what init() stored, not instead of it: `open({ question })` after
+    // `init(id, stagingUrl)` must still go to staging, not quietly to
+    // production — or throw for want of a client id it was already given.
+    const clientId = options.clientId ?? config?.clientId;
+    if (clientId !== undefined) init(clientId, options.baseUrl ?? config?.baseUrl);
+    if ((options as { visitor?: unknown }).visitor !== undefined) {
+      warn(
+        'open() does not take a visitor: the full-screen chat opens in the ' +
+          "system browser, which would keep the customer's details in its " +
+          'history. Use the embedded widget for that: getEmbeddedWidget()?.setVisitor?.({ name, phone, email }).',
+      );
+    }
+  }
   if (!config) {
     throw new Error(
       '[KeydaBot] no client id yet. Call KeydaBot.init("kb_live_…") once at ' +
@@ -200,7 +260,21 @@ function open(options?: KeydaBotOptions): Promise<boolean> {
     );
   }
 
-  const url = chatUrl(config.clientId, config.baseUrl);
+  // `?via=capacitor` tells the page it is inside an app. The system browser
+  // view has no bridge for it to find, so it took this for a website visit,
+  // where a chat lasts one browser tab — and every open() is a new tab, so
+  // the customer got a new conversation each time. The hosted page turns the
+  // mark into a 24-hour chat, as in every other SDK. Native only: the same
+  // app built for the web opens an ordinary browser tab, which may be on a
+  // shared computer, where a chat kept for a day would show the next person
+  // the last one's name, phone and address. (`chatUrl()` stays the bare
+  // link: it is also what an app shares or embeds.)
+  const base = isNativePlatform()
+    ? `${chatUrl(config.clientId, config.baseUrl)}?via=capacitor`
+    : chatUrl(config.clientId, config.baseUrl);
+  // The question rides in the #fragment: the page reads it, puts it in the
+  // box unsent and takes it off the address; a server never sees it.
+  const url = base + startFragment(options?.question);
   const browser = resolveBrowser();
   return browser ? openViaCapacitor(browser, url) : Promise.resolve(openViaWindow(url));
 }

@@ -15,6 +15,11 @@ cd ios && pod install
 
 The peer floor is **`react-native-webview` 13.3.0**, the first release with `onOpenWindow`. This SDK relies on it: on iOS a `target="_blank"` link (which "Powered by Keyda" is) is delivered through `onOpenWindow` before `onShouldStartLoadWithRequest` ever runs. On 13.0–13.2 the prop does not exist, the link falls back to loading inside the WebView, and the navigation handler catches it — it still opens in the browser, but by a route this package does not test.
 
+Tested with React Native 0.87 on the New Architecture, and in Expo (SDK 57): in Expo Go — nothing
+native to add, `react-native-webview` is part of Expo Go — and in a development build
+(`npx expo run:ios` / `run:android`). `npx expo install react-native-webview` picks the WebView
+version that matches your Expo SDK; 13.x and 14.x both work.
+
 ## Usage
 
 ```tsx
@@ -46,7 +51,7 @@ export default function SupportScreen() {
 
 ## API
 
-That is the whole surface. There is no message API, no unread count and no user-identity call, because none of those work end to end today — see [Limitations](#limitations).
+That is the whole surface. There is no message API and no user-identity call. The one unread signal, `useKeydaBotReplies`, is a reply from a person at the business that the chat has not shown yet — which the server can answer honestly. See [Limitations](#limitations).
 
 ### `<KeydaBot />`
 
@@ -55,11 +60,62 @@ That is the whole surface. There is no message API, no unread count and no user-
 | `clientId` | `string` | Required. From **Install** in the [dashboard](https://keyda.in/business/app/). |
 | `baseUrl` | `string?` | Defaults to `https://keyda.in/business`. |
 | `visible` | `boolean` | Required. Presents the chat over your app. |
-| `onClose` | `() => void` | Required. Fired by the ✕ and by Android's back button. |
+| `onClose` | `() => void` | Required. Fired by the ✕, and by Android's back when the chat has no sheet open (see below). |
+| `question` | `string?` | Put in the chat's message box, unsent, when it opens; a new value while it is open replaces the text. It travels in the URL's #fragment, never in a server log. Up to 500 characters, as one line: the chat joins lines and collapses runs of spaces. |
+| `visitor` | `{name?, phone?, email?}?` | Your signed-in customer, offered in the chat's forms — see [Your signed-in customer](#your-signed-in-customer). |
 
 ### `useKeydaBot(clientId, baseUrl?)`
 
-Returns `{ isShowing, show(), dismiss(), botProps }`. Spread `botProps` onto `<KeydaBot />`.
+Returns `{ isShowing, show(question?), dismiss(), botProps }`. Spread `botProps` onto `<KeydaBot />`. `bot.show('Is this in stock?')` opens the chat with that question in its message box; called again with the same text, it puts it back even if the customer edited it.
+
+### `<KeydaBotChat />` — the chat inside one of your own screens
+
+For a Help tab or a support screen, instead of the full-screen modal:
+
+```tsx
+<KeydaBotChat clientId="kb_live_2f9c81ba77d04e6a" question="Is this in stock?" style={{flex: 1}} />
+```
+
+| Prop | Type | |
+|---|---|---|
+| `clientId`, `baseUrl`, `question`, `visitor` | | As on `<KeydaBot />`. |
+| `focused` | `boolean?` | Is this screen the one in front? Default `true`. In a tab or under other screens that stay mounted, pass React Navigation's `useIsFocused()` (or your tab's selected state). |
+| `style` | `ViewStyle?` | Size and place it like any view. |
+| `onCanGoBackChange` | `(open: boolean) => void` | Called when the chat opens a sheet over the conversation (an item, the cart, a booking) and when the last one closes. |
+
+No close button (your screen's navigation is the way out), and no insets but the keyboard's: lay it out clear of the status and navigation bars as you would any view. On Android, back closes a sheet the chat has open before your app's own back handling sees it, and is your app's back otherwise. `BackHandler` is global, so a chat that is mounted but not in front must be told (`focused={false}`): it then leaves back to your app — it would otherwise close a sheet in a chat nobody can see — and counts as off screen for `useKeydaBotReplies`.
+
+### `useKeydaBotReplies(clientId, options?)`
+
+A reply from the business that came while no chat was on screen. Returns `{ hasUnreadReply, checkForReplies() }`.
+
+```tsx
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const replies = useKeydaBotReplies(CLIENT_ID, {
+  storage: AsyncStorage,                 // optional: keep watching across app restarts
+  onReply: () => console.log('new reply'),
+});
+<Badge visible={replies.hasUnreadReply} />
+```
+
+A customer who asks for a person leaves their details and closes the chat; you answer from the dashboard later. The chat shows the answer the next time it opens; this tells your app it is there. The SDK asks when your app comes to the foreground — once a minute at most, and only for chats in which the customer asked for a person in the last 14 days. `checkForReplies()` asks now (once in 10 seconds at most). `hasUnreadReply` stays true until the customer opens the chat (`<KeydaBot visible>`, or a focused `<KeydaBotChat />`), which shows the reply; `onReply` is called once per new reply. A `<KeydaBotChat focused={false}>` still draws a reply in its hidden tab, and that does not count as seen: the dot stays on, and `onReply` is called, until the tab is selected.
+
+| Option | Type | |
+|---|---|---|
+| `baseUrl` | `string?` | The same as on `<KeydaBot />`. |
+| `storage` | `{getItem, setItem, removeItem?}?` | Where to remember the chats to ask about: AsyncStorage, or a wrapper round MMKV. This package adds no dependency, so without one they are watched only while the app runs. Chat ids and times only — what the WebView keeps already. |
+| `onReply` | `() => void` | Once per new reply, while no chat is on screen. |
+
+There is no push: a reply is noticed when the app is opened.
+
+## Your signed-in customer
+
+```tsx
+<KeydaBot {...bot.botProps} visitor={user ? {name: user.name, phone: user.phone, email: user.email} : undefined} />
+```
+
+The chat then does not ask what your app already knows. The details are **offered, never sent**: they appear in "talk to a person", an order, a booking, and a welcome question for a name, a phone number or an email, and the customer submits them. Until then nothing leaves the phone — they travel in the URL's #fragment, and a change reaches a chat already open. They are your app's word, not a verified identity. A value that does not look like what it claims is dropped whole, never cut: a name of 1–80 characters on one line, a phone number with 8–15 digits (and only spaces and `+ - ( ) .` besides), an email address up to 254 characters. Pass `undefined` when the customer signs out.
 
 ### `buildChatUrl(clientId, baseUrl?)`
 
@@ -96,7 +152,13 @@ Point it at a host that redirects somewhere else and the redirect is treated as 
 
 Nothing to configure on either platform, and in particular **`android:windowSoftInputMode` on your activity is not what governs this.** The chat is presented in a React Native `Modal`, which on Android is a `Dialog` with its own window, and React Native sets `SOFT_INPUT_ADJUST_RESIZE` on that window itself — your manifest setting does not reach it either way. On iOS the SDK resizes the WebView with a `KeyboardAvoidingView`, which shrinks the page's viewport and lifts the message box clear of the keys.
 
-Safe areas: on iOS the chat is wrapped in React Native's core `SafeAreaView`, so it never draws under a notch or the home indicator. On Android the same is true, but it comes from the modal's dialog window being laid out inside the system bars rather than from anything in this package — React Native's `SafeAreaView` is a plain `View` on Android. If your app puts the modal edge-to-edge under the status or navigation bar, that inset is yours to add; this package takes no safe-area dependency to do it for you (see [Limitations](#limitations)).
+Safe areas: on iOS the chat is wrapped in React Native's core `SafeAreaView`, so it never draws under a notch or the home indicator. On Android, an app that targets Android 15 or later is edge-to-edge (every app Google Play accepts now targets 16, and React Native 0.81+ draws its `Modal` under both system bars), so this package keeps the close button below the status bar, "Powered by Keyda" above the navigation bar and the message box above the keyboard itself — measured, so an app that is not edge-to-edge keeps the window's own insets and nothing is counted twice. It reads the navigation bar's height from `react-native-safe-area-context` when your app has it (React Navigation and Expo apps do) and otherwise learns it the first time the keyboard opens; no dependency is added.
+
+When the chat closes, an Android app that never set a status-bar style of its own gets its own look back (dark icons on a light app): React Native's default would otherwise have left the time and battery white on white.
+
+## Back, on Android
+
+The chat opens sheets over the conversation — an item over the menu, the cart, a booking. Android's back closes the sheet on top first, and calls `onClose` only when none is open. The page answers through `KeydaBot.back()`; a page too old to have it, or one that does not answer within half a second, gets `onClose` straight away.
 
 ## Links open outside the chat
 
@@ -137,16 +199,35 @@ One trap worth knowing: if your app *declares* `CAMERA` in its manifest but has 
 
 Nothing in this package reads the files. They go straight from the picker to the hosted page's own upload, exactly as they would in a browser.
 
+## Inside the chat
+
+All of this is the hosted page's, so it reaches your app without an SDK update:
+
+* **A welcome message with suggestion buttons**, in the language the bot is set to; the header
+  says "AI assistant".
+* **The conversation is kept on the device for 24 hours**, and the chat makes no visitor id.
+  (On a website a conversation lasts one browser tab.)
+* **Orders and bookings**, when the business takes them: a cart, booking dates and times, a
+  link to call the business when an order or booking has waited too long, and "Add to
+  calendar" for a confirmed booking.
+* **Attachments**: photos (JPEG, PNG, WebP, GIF) and PDF, DOCX, TXT, CSV and MD files.
+* **Links leave the chat**: `tel:` opens the dialer, `mailto:` the mail app, and web links the
+  browser.
+* **"Add to calendar" is a link to an `.ics` file.** iOS opens it in Calendar as a calendar to
+  subscribe to, so the booking arrives as a small calendar of its own rather than as one event
+  in yours. Android offers the phone's calendar app when that app imports `.ics` files — current
+  Google Calendar does — and otherwise the browser downloads the file.
+
 ## Limitations
 
 Stated plainly, because finding these out after shipping is worse.
 
 - **No offline.** It is a hosted page. No network, no chat — you get the retry screen.
-- **No push notifications.** A reply that arrives while your app is closed is not delivered anywhere. There is nothing in this package that listens for one.
-- **No message, unread-count or identity API.** You cannot send a message programmatically, read the transcript, badge an unread count, or tell the bot who the logged-in user is. Those are absent rather than half-built.
+- **No push notifications.** A reply that arrives while your app is closed is noticed when the app is next opened (`useKeydaBotReplies`), not before.
+- **No message or identity API.** You cannot send a message programmatically or read the transcript, and `visitor` offers details to the customer — it does not tell the server who they are. Those are absent rather than half-built.
 - **Closing unmounts the WebView.** React Native's `Modal` tears its children down when it hides, so reopening reloads the page. The visitor's conversation resumes from DOM storage; the reload itself is a real cost on a slow connection.
 - **No theme prop.** The owner picks the theme once in the dashboard (Match the visitor / Always light / Always dark); the hosted page resolves it and tells this container, which follows. See [Theme](#theme). An app cannot override that choice.
-- **Core `SafeAreaView`, which React Native has deprecated.** Current React Native logs a one-time "SafeAreaView has been deprecated" warning that will be attributed to this package. It is the only dependency-free source of the iOS notch and home-indicator insets, and this package adds no dependency to replace it; it will move to `react-native-safe-area-context` (as an optional peer) before React Native removes the core view. Until then the `react-native` peer has no upper bound, so the removal release would break the modal layout — pin your `react-native` upgrade to a version of this package that says it is supported.
+- **Core `SafeAreaView`, which React Native has deprecated, on iOS.** In an iOS development build React Native shows a one-time "SafeAreaView has been deprecated" warning attributed to this package, as a toast over the bottom of the screen — dismiss it; release builds show nothing. (Android does not read it: there it pads nothing.) It is the only dependency-free source of the iOS notch and home-indicator insets, and this package adds no dependency to replace it; it will move to `react-native-safe-area-context` (as an optional peer) before React Native removes the core view. Until then the `react-native` peer has no upper bound, so the removal release would break the modal layout — pin your `react-native` upgrade to a version of this package that says it is supported.
 - **Attachments are your app's permissions, not this package's.** The chat page's own attach button opens the picker through `react-native-webview` on Android and WebKit on iOS, so nothing here has to change — but an iOS app without `NSCameraUsageDescription` is *terminated* when a customer picks "Take Photo or Video" from that sheet. See [Attachments](#attachments). This package still declares no permission of its own, requests none at runtime, and never reads a chosen file.
 - **Ships TypeScript source, no build step.** Metro compiles it along with your app, which is the normal pattern for a React Native library. If you run Jest, add the package to `transformIgnorePatterns`:
   ```js
@@ -155,7 +236,7 @@ Stated plainly, because finding these out after shipping is worse.
 
 ## Privacy
 
-The SDK itself collects nothing and sends nothing anywhere: it loads one URL. The chat page talks to Keyda's API to answer questions, and stores a conversation id in the WebView's DOM storage so a visitor's thread survives closing the app. No device identifier is read, generated or transmitted by this package.
+The SDK itself collects nothing. It loads the chat page; the chat page talks to Keyda's API to answer questions, and stores a conversation id in the WebView's DOM storage so a visitor's thread survives closing the app. If you use `useKeydaBotReplies`, the SDK itself also asks your `baseUrl`'s server for new rows in the chats the page is waiting on (`/api/business/v1/widget/{clientId}/messages`, with the conversation id and a time — no cookie, no identifier), and writes that list — chat ids and times — to the `storage` you pass. `visitor` stays on the phone until the customer submits a form. No device identifier is read, generated or transmitted by this package.
 
 ## Licence
 

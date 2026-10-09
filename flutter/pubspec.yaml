@@ -1,19 +1,21 @@
 name: keyda_bot
 description: Keyda Business chat for Flutter — a thin WebView wrapper that opens your hosted Keyda chat page over your app. No analytics, no device identifiers, no third-party packages.
-version: 0.1.4
+version: 0.2.0
 homepage: https://keyda.in/business
 repository: https://github.com/KeydaAI/keyda-business-sdks
 issue_tracker: https://github.com/KeydaAI/keyda-business-sdks/issues
 documentation: https://keyda.in/business/docs/reference-sdks
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
-  flutter: '>=3.10.0'
+  # 3.24 for PopScope's onPopInvokedWithResult, which back over an open sheet
+  # (rule 10) is built on.
+  sdk: '>=3.5.0 <4.0.0'
+  flutter: '>=3.24.0'
 
 dependencies:
   flutter:
     sdk: flutter
-  # Four packages, every one published by flutter.dev out of the same
+  # Six packages, every one published by flutter.dev out of the same
   # flutter/packages repository the framework itself ships from, so none is a
   # third party and none is a tracker (CONTRACT.md rule 5). Each one exists
   # for a rule the shared WebView API cannot satisfy on its own:
@@ -32,14 +34,24 @@ dependencies:
   #                            follows webview_flutter's own major.
   #   image_picker             rule 9 — something has to produce the file the
   #                            page asked for. The Flutter team's picker picks
-  #                            photos through the system gallery, with no
+  #                            photos through the system photo picker, with no
   #                            permission of its own on either platform.
-  # Nothing here reaches for an HTTP client, an analytics package or anything
-  # that reads a device identifier.
+  #   file_selector            rule 9 — and the documents the chat takes (PDF,
+  #                            DOCX, TXT, CSV, MD) through the system's file
+  #                            picker, also with no permission. Android only:
+  #                            on iOS WebKit opens its own picker.
+  #   shared_preferences       remembers the chats waiting for the business's
+  #                            reply (chat ids and times only — what the
+  #                            WebView already keeps) so hasUnreadReply
+  #                            survives an app restart.
+  # Nothing here reaches for an analytics package or anything that reads a
+  # device identifier. The reply check uses dart:io's own HttpClient.
   webview_flutter: ^4.4.0
   webview_flutter_android: '>=3.2.0 <5.0.0'
   url_launcher: ^6.2.0
   image_picker: ^1.0.0
+  file_selector: ^1.0.0
+  shared_preferences: ^2.2.0
 
 dev_dependencies:
   flutter_test:

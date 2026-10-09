@@ -116,6 +116,23 @@ if (!opened) {
 await KeydaBot.open({ clientId: 'kb_live_…', baseUrl: 'https://staging.keyda.in' });
 ```
 
+After `init()`, what `open()` is given is laid over it: `open({ question })`
+keeps the client id and the server `init()` stored, so a staging `init()` stays
+on staging.
+
+And a question to start with — put in the chat's message box, unsent; it
+travels in the URL's #fragment, so it never reaches a server log:
+
+```ts
+await KeydaBot.open({ question: 'Is this in stock?' });
+```
+
+On the embedded path the widget's own controls do the same:
+`getEmbeddedWidget()?.open(); getEmbeddedWidget()?.prefill?.('Is this in stock?')`.
+Route Capacitor's Android `backButton` to `getEmbeddedWidget()?.back?.()` first,
+so back closes a sheet the chat has open (an item, the cart) before it leaves
+your page.
+
 ### Which path it takes
 
 | Situation | Surface | `close()` | `isShowing` |
@@ -143,7 +160,7 @@ Install `@capacitor/browser` if you need either of those to mean more.
 
 ```ts
 KeydaBot.init(clientId: string, baseUrl?: string): void
-KeydaBot.open(options?: { clientId, baseUrl }): Promise<boolean>   // alias: show()
+KeydaBot.open(options?: { clientId?, baseUrl?, question? }): Promise<boolean>   // alias: show()
 KeydaBot.close(): Promise<boolean>                                // alias: dismiss()
 KeydaBot.isOpen: boolean                                          // alias: isShowing
 
@@ -156,9 +173,15 @@ chatUrl(clientId: string, baseUrl?: string): string
 `open`/`close`/`isOpen` are the same three operations under the names a
 JavaScript caller expects. They are the same functions, not variants.
 
+`question` goes in the chat's message box, unsent (up to 500 characters, as
+one line). It travels in the URL's #fragment, which no server sees.
+
 That is the entire surface. There is no `sendMessage`, no unread count and no
-`identify` call, because there is nothing behind them yet on the server. A
-method that does not work end to end is worse than a missing one.
+`identify` call. The other SDKs' reply check (a person's reply the chat has not
+shown yet) cannot work here: the full screen is the phone's browser, which the
+app cannot read. A reply simply shows when the chat reopens — on the embedded
+path, when the panel opens. A method that does not work end to end is worse
+than a missing one.
 
 An invalid `clientId` throws immediately — it must match
 `kb_live_` + 8-48 hex characters — and so does `open()` called before any
@@ -167,6 +190,28 @@ throw, and it is deliberate: both are mistakes in your own source that fail
 identically on every run, so they surface on your first launch rather than in
 front of a customer. Runtime failures (offline, blocked, refused) are all
 reported by return value.
+
+### Your signed-in customer: the embedded widget only
+
+```ts
+getEmbeddedWidget()?.setVisitor?.({ name: user.name, phone: user.phone, email: user.email });
+getEmbeddedWidget()?.setVisitor?.({});   // on sign-out
+```
+
+The details are **offered, never sent**, in the forms that ask for them ("talk
+to a person", an order, a booking, a welcome question for a name, phone or
+email); the customer submits them. They are your app's word, not a verified
+identity. A value that does not look like what it claims is dropped whole,
+never cut: a name of 1–80 characters on one line, a phone number with 8–15
+digits (and only spaces and `+ - ( ) .` besides), an email address up to 254
+characters.
+
+**The full-screen `open()` does not take them.** It opens the system browser
+(Custom Tabs, SFSafariViewController, a tab on the web), which can keep the
+whole link — #fragment included — in its history, and Chrome syncs that
+history to the customer's other devices. A name, a phone number and an email
+do not belong there, so only the question goes in that link. Use the embedded
+widget when you want the chat to know your customer.
 
 ## Things this package cannot do for you
 
@@ -258,13 +303,44 @@ surface stores it in the **system browser's**. They are separate jars, so a
 conversation started one way does not continue in the other. Pick one surface
 per app rather than offering both.
 
+The full-screen surface needs 0.2.0 for this: `open()` adds `?via=capacitor`
+to the chat link so the page knows it is inside an app. Without it the page
+took the browser sheet for a website visit, where a conversation lasts one
+tab — and every `open()` is a new tab, so each open started a new
+conversation.
+
+## Inside the chat
+
+Both surfaces load the same chat. All of this is the page's, so it reaches your app without an
+SDK update:
+
+* **A welcome message with suggestion buttons**, in the language the bot is set to; the header
+  says "AI assistant".
+* **The conversation is kept on the device for 24 hours**, and the chat makes no visitor id.
+  (On a website a conversation lasts one browser tab.)
+* **Orders and bookings**, when the business takes them: a cart, booking dates and times, a
+  link to call the business when an order or booking has waited too long, and "Add to
+  calendar" for a confirmed booking.
+* **Attachments**: photos (JPEG, PNG, WebP, GIF) and PDF, DOCX, TXT, CSV and MD files.
+  On the embedded path the picker is your app's web view's; see "Attachments, on the embedded
+  path".
+* **Links leave the chat**: `tel:` opens the dialer, `mailto:` the mail app, and web links the
+  browser.
+* **"Add to calendar" is a link to an `.ics` file.** iOS opens it in Calendar as a calendar to
+  subscribe to, so the booking arrives as a small calendar of its own rather than as one event
+  in yours. Android offers the phone's calendar app when that app imports `.ics` files — current
+  Google Calendar does — and otherwise the browser downloads the file.
+
 ## Limitations
 
 Stated plainly, because discovering these after shipping is worse:
 
 - **Not offline-capable.** It is a hosted page. No connection, no chat.
-- **No push notifications.** If a customer leaves the chat, nothing brings them
-  back.
+- **No push notifications, and no reply check.** If a customer leaves the
+  chat, nothing brings them back; a reply waits in the chat for them.
+- **The full-screen chat does not take your signed-in customer.** Its link
+  would stay in the browser's history; see
+  [Your signed-in customer](#your-signed-in-customer-the-embedded-widget-only).
 - **No theme API.** Theme and accent colour come from the dashboard and apply
   everywhere at once; there is no per-app override. See [Theme](#theme) for
   what the system browser sheet does and does not follow.

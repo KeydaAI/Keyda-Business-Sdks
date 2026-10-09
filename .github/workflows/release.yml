@@ -1,0 +1,215 @@
+# Pushing a tag vX.Y.Z publishes that version of every package, with no
+# long-lived token anywhere:
+#
+#   npm      @keyda/bot-react-native, @keyda/bot-capacitor — trusted publishing
+#            (OIDC). Each package's npm settings name this repository and this
+#            file, release.yml, with "npm publish" allowed.
+#   pub.dev  keyda_bot — automated publishing (OIDC). The package's admin page
+#            names this repository with the tag pattern v{{version}}, push
+#            events allowed.
+#   JitPack  Android, and SPM / the podspec URL for iOS, build from the tag
+#            itself; the last jobs fetch them as an integrator would.
+#   WordPress the plugin zip, attached to this run.
+#
+# Both registries compare the repository's name EXACTLY, case included, with
+# the one GitHub puts in the run's identity — and so does npm's provenance
+# with each package.json's repository.url. Every file here says
+# KeydaAI/keyda-business-sdks.
+#
+# Nothing goes to npm or pub.dev unless the tag matches every package
+# (tools/release.mjs) and the whole CI workflow passes on the tagged commit.
+# JitPack and SPM serve the tag the moment it is pushed, so run
+# `node tools/release.mjs check vX.Y.Z` before pushing it. A re-run skips
+# whatever is already published, so a failed job can be re-run on its own.
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: The tag matches every package
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.seen.outputs.version }}
+      npm-react-native: ${{ steps.seen.outputs.npm-react-native }}
+      npm-capacitor: ${{ steps.seen.outputs.npm-capacitor }}
+      pub: ${{ steps.seen.outputs.pub }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: node tools/release.mjs check "$GITHUB_REF_NAME"
+      - name: What is already published
+        id: seen
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          seen() { if npm view "$1@$v" version >/dev/null 2>&1; then echo yes; else echo no; fi; }
+          {
+            echo "version=$v"
+            echo "npm-react-native=$(seen @keyda/bot-react-native)"
+            echo "npm-capacitor=$(seen @keyda/bot-capacitor)"
+            if curl -fsS -o /dev/null "https://pub.dev/api/packages/keyda_bot/versions/$v"; then echo "pub=yes"; else echo "pub=no"; fi
+          } >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
+  ci:
+    name: CI on the tagged commit
+    uses: ./.github/workflows/ci.yml
+
+  npm:
+    name: npm ${{ matrix.package }}
+    needs: [check, ci]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write # trusted publishing; provenance comes with it
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: '@keyda/bot-react-native'
+            dir: react-native
+            seen: npm-react-native
+          - package: '@keyda/bot-capacitor'
+            dir: ionic
+            seen: npm-capacitor
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+    steps:
+      - if: needs.check.outputs[matrix.seen] == 'yes'
+        run: echo "${{ matrix.package }}@${{ needs.check.outputs.version }} is already on npm; nothing to do."
+        working-directory: .
+      - if: needs.check.outputs[matrix.seen] != 'yes'
+        uses: actions/checkout@v7
+      - if: needs.check.outputs[matrix.seen] != 'yes'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      # Trusted publishing needs npm 11.5.1 or later; Node 24 brings one. Checked,
+      # not installed: nothing unpinned runs in a job that can publish.
+      - if: needs.check.outputs[matrix.seen] != 'yes'
+        run: |
+          npm --version
+          node -e "const [a,b,c]=process.argv[1].split('.').map(Number); process.exit(a>11||(a===11&&(b>5||(b===5&&c>=1)))?0:1)" "$(npm --version)" \
+            || { echo "npm 11.5.1 or later is needed for trusted publishing"; exit 1; }
+      # Ionic builds dist/ in prepublishOnly with its own TypeScript.
+      - if: needs.check.outputs[matrix.seen] != 'yes' && hashFiles(format('{0}/package-lock.json', matrix.dir)) != ''
+        run: npm ci --no-audit --no-fund
+      - if: needs.check.outputs[matrix.seen] != 'yes'
+        run: npm publish
+
+  pub-dev:
+    name: pub.dev keyda_bot
+    needs: [check, ci]
+    if: needs.check.outputs.pub != 'yes'
+    permissions:
+      contents: read
+      id-token: write
+    # The Dart team's own publishing workflow: it gets the pub.dev token from
+    # GitHub's OIDC and publishes with the Flutter SDK's dart.
+    uses: dart-lang/setup-dart/.github/workflows/publish.yml@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
+    with:
+      working-directory: flutter
+
+  wordpress:
+    name: WordPress zip
+    needs: [check, ci]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      # The top-level folder must be keyda-bot/: WordPress names the install
+      # directory after it, and a wrong name installs a second copy.
+      - run: cd wordpress && zip -r "$RUNNER_TEMP/keyda-bot-${{ needs.check.outputs.version }}.zip" keyda-bot -x '*.DS_Store' -x '__MACOSX/*'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: keyda-bot-${{ needs.check.outputs.version }}
+          path: ${{ runner.temp }}/keyda-bot-${{ needs.check.outputs.version }}.zip
+          if-no-files-found: error
+          overwrite: true
+
+  # What an integrator gets, fetched the way they fetch it — not the source.
+  registries:
+    name: Installable from npm, pub.dev and JitPack
+    needs: [check, npm, pub-dev]
+    # Each registry is checked even when another one's job failed: a failed npm
+    # publish must not hide whether pub.dev and JitPack are right.
+    if: ${{ !cancelled() && needs.check.result == 'success' }}
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: npm
+        if: ${{ !cancelled() }}
+        run: |
+          # The registry can take a minute to show a new version everywhere.
+          for p in @keyda/bot-react-native @keyda/bot-capacitor; do
+            got=""
+            for _ in $(seq 1 10); do
+              got=$(npm view "$p@$VERSION" version 2>/dev/null) && [ "$got" = "$VERSION" ] && break
+              sleep 30
+            done
+            echo "$p ${got:-missing}"; [ "$got" = "$VERSION" ]
+          done
+      - name: pub.dev
+        if: ${{ !cancelled() }}
+        run: |
+          # The API can lag the upload by a minute.
+          for _ in $(seq 1 10); do
+            curl -fsS -o /dev/null "https://pub.dev/api/packages/keyda_bot/versions/$VERSION" && { echo "keyda_bot $VERSION"; exit 0; }
+            sleep 30
+          done
+          echo "keyda_bot $VERSION is not on pub.dev"; exit 1
+      - name: JitPack builds the tag, and the AAR says this version
+        if: ${{ !cancelled() }}
+        run: |
+          base="https://jitpack.io/com/github/KeydaAI/keyda-business-sdks/v$VERSION/keyda-business-sdks-v$VERSION"
+          # The first request starts the build; it can take several minutes.
+          for _ in $(seq 1 30); do
+            curl -fsS --max-time 120 -o pom.xml "$base.pom" && break
+            sleep 30
+          done
+          [ -s pom.xml ] || { echo "JitPack never served the POM"; exit 1; }
+          curl -fsS --max-time 120 -o keyda-bot.aar "$base.aar"
+          unzip -o -q keyda-bot.aar classes.jar
+          unzip -o -q classes.jar -d classes
+          # The version (BuildConfig keeps it as a constant) and the default server.
+          grep -qaF "$VERSION" classes/in/keyda/bot/BuildConfig.class
+          grep -rqaF "https://keyda.in/business" classes/in/keyda/bot/
+          echo "JitPack: v$VERSION, version and base URL in the classes"
+
+  spm:
+    name: Swift Package Manager resolves the tag
+    needs: [check, ci]
+    runs-on: macos-26
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+    steps:
+      - name: A fresh package that depends on this version
+        run: |
+          mkdir consumer && cd consumer
+          cat > Package.swift <<EOF
+          // swift-tools-version:5.9
+          import PackageDescription
+          let package = Package(
+              name: "Consumer",
+              platforms: [.iOS(.v15)],
+              dependencies: [.package(url: "https://github.com/KeydaAI/keyda-business-sdks", exact: "$VERSION")],
+              targets: [.target(name: "Consumer", dependencies: [.product(name: "KeydaBot", package: "keyda-business-sdks")])]
+          )
+          EOF
+          mkdir -p Sources/Consumer && echo 'import KeydaBot' > Sources/Consumer/Consumer.swift
+          swift package resolve
+          grep -q "\"version\" : \"$VERSION\"" Package.resolved
+          echo "SPM: keyda-business-sdks $VERSION"

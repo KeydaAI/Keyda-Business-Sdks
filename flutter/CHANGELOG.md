@@ -1,5 +1,60 @@
 # Changelog
 
+
+## 0.2.0 — unreleased
+
+- **`KeydaBotChat`: the chat inside one of your own screens.** A widget with no
+  close bar; lay it out in a `SafeArea` like any other. With a sheet open in the
+  chat (an item, the cart, a booking) back closes the sheet; otherwise it is
+  your navigator's back, predictive back included. `onCanGoBackChanged` says
+  when one is open.
+- **Open with a question:** `KeydaBot.show(context, question: 'Is this in
+  stock?')` puts it in the message box, unsent (in the URL's #fragment, never in
+  a server log); a second call with the chat open replaces the text.
+
+- **Your signed-in customer:** `KeydaBot.setVisitor(name:, phone:, email:)` and
+  `clearVisitor()`. Offered — never sent — in "talk to a person", an order, a
+  booking and a welcome question for a name, phone or email; the customer
+  submits them. In the URL's #fragment, never in a server log; a change — even
+  one made while the chat loads, or a Retry — reaches a chat already open. A
+  value that does not look right is dropped whole, never cut: name 1–80
+  characters, phone 8–15 digits, email up to 254 characters.
+- **A reply while the chat is closed:** `KeydaBot.hasUnreadReply` (a
+  `ValueListenable<bool>`), `KeydaBot.onReply` and `KeydaBot.checkForReplies()`.
+  Asked when the app comes to the foreground (once a minute at most), only for
+  chats in which the customer asked for a person in the last 14 days. Adds
+  `shared_preferences` (flutter.dev) to remember the list across restarts.
+  Opening the chat clears it at once. A `KeydaBotChat(focused: false)` in a tab
+  that is not selected does not count as seen: a reply it draws out of sight
+  keeps the badge on and calls `onReply`.
+- `KeydaBotChat(focused:)`: a chat kept alive in a tab that is not selected
+  leaves back to your navigator instead of closing a sheet nobody can see.
+- A second `show(question:)` is no longer undone by a rebuild of your
+  navigator putting the first question back over it.
+- `onCanGoBackChanged` now also reports a load, a failure and a retry. Retry
+  really loads again and does not bring back a question already sent.
+- A question is cut at 500 whole characters, never through an emoji, and a
+  lone half of one is left out rather than sent as "�".
+- 0.1.5 was never released; everything prepared for it ships in this version.
+
+- **Documents can be attached on Android.** The chat takes PDF, DOCX, TXT, CSV
+  and MD as well as photos, and until now every request was answered with the
+  photo gallery or nothing. An input that accepts only images still opens the
+  photo picker (`image_picker`); one that accepts anything else opens the
+  system's file picker through `file_selector` — published by flutter.dev from
+  the same `flutter/packages` repository as the other four, needing no
+  permission. iOS is unchanged: WebKit opens its own picker.
+- **Android back closes what the customer is looking at first** — the sheet the
+  chat has open (an item, the cart, a booking) — and pops the chat only when
+  nothing was open (CONTRACT.md rule 10). A page from before October 2026 has
+  no `back()`; the chat then closes as it always did. The close button still
+  closes the chat at once.
+- Requires Flutter 3.24 / Dart 3.5 (was 3.10 / 3.0), for `PopScope`'s
+  `onPopInvokedWithResult`.
+- Checked with Flutter 3.47 on an Android 16 phone, Android 15 and 16 tablets,
+  an iPhone 17 Pro and an iPad Pro (iOS 26.5): portrait, landscape, dark, the
+  keyboard, back over one and two sheets, and a PDF picked and sent.
+
 ## 0.1.4 — 2026-09-03
 
 - **The chat's attach button opens a picker on Android** (CONTRACT.md rule 9).

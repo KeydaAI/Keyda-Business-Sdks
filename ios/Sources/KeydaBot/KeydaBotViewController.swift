@@ -23,14 +23,25 @@ private final class KeydaBotScriptMessageProxy: NSObject, WKScriptMessageHandler
     }
 }
 
-/// Hosts the hosted chat page.
+/// Hosts the hosted chat page — as the sheet `KeydaBot.show()` presents (with its own
+/// close bar), or embedded in one of the host's screens (`KeydaBot.makeChatViewController`,
+/// SwiftUI's `KeydaBotView`), where the screen around it owns the way out.
 ///
-/// Internal on purpose: the contract every Keyda SDK implements exposes four calls and
-/// no view controller, so this stays free to change.
+/// Internal on purpose: the public surface hands it out as a plain `UIViewController`,
+/// so this stays free to change.
 @available(iOSApplicationExtension, unavailable)
 final class KeydaBotViewController: UIViewController {
 
     private let botConfiguration: KeydaBotConfiguration
+
+    /// The sheet has a close bar; an embedded chat does not — the host's screen has its
+    /// own navigation.
+    private let showsCloseButton: Bool
+
+    /// A question to start with: in the URL's fragment at the first load (never in a
+    /// server log), or put in the composer once the page is up (`prefill`).
+    private var question: String?
+    private var pendingPrefill: String?
 
     /// Called when the close button is tapped. `KeydaBot` owns dismissal so that its
     /// `isShowing` never disagrees with what is on screen.
@@ -43,6 +54,22 @@ final class KeydaBotViewController: UIViewController {
     /// Once the chat has rendered, no later navigation failure is allowed to replace
     /// it with a retry screen. See `handle(_:)`.
     private var hasRenderedChat = false
+
+    /// The start (question, visitor) has reached a page that rendered. Every load after
+    /// that — Retry, a terminated web content process — takes the plain chat URL: the
+    /// same URL plus a #fragment is a same-document jump that loads nothing, and a
+    /// question the customer already sent must not come back into the box.
+    private var startDelivered = false
+    private var loadAttempted = false
+
+    /// `onDidDismiss` is called once, whichever route the sheet left by.
+    private var dismissReported = false
+
+    /// On screen as far as the reply check knows (`KeydaBotReplies`).
+    private var countedOnScreen = false
+
+    /// Posted on the main queue when `KeydaBot.setVisitor` changes the details.
+    static let visitorChanged = Notification.Name("in.keyda.bot.visitorChanged")
 
     /// The URL the chat is judged against. Starts as the configured chat URL and moves
     /// only when the host redirects the FIRST load (apex → `www.`, `http` → `https`);
@@ -64,10 +91,34 @@ final class KeydaBotViewController: UIViewController {
             : UIColor(red: 0xf7 / 255.0, green: 0xf8 / 255.0, blue: 0xfc / 255.0, alpha: 1)
     }
 
-    init(configuration: KeydaBotConfiguration) {
+    init(configuration: KeydaBotConfiguration, question: String? = nil, showsCloseButton: Bool = true) {
         self.botConfiguration = configuration
         self.chatURL = configuration.chatURL
+        self.question = Self.cleaned(question)
+        self.showsCloseButton = showsCloseButton
         super.init(nibName: nil, bundle: nil)
+    }
+
+    /// A question worth sending: trimmed, at most 500 characters (the page's own cap),
+    /// nil when empty.
+    private static func cleaned(_ question: String?) -> String? {
+        guard let text = question?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+        return String(text.prefix(500))
+    }
+
+    /// Puts `question` in the chat's message box, unsent — the customer still taps
+    /// send. Before the page has loaded it waits for it.
+    func prefill(_ question: String) {
+        guard let text = Self.cleaned(question) else { return }
+        guard hasRenderedChat else {
+            pendingPrefill = text
+            return
+        }
+        // A JSON string is a valid JavaScript string literal: no hand-escaping.
+        guard let data = try? JSONEncoder().encode(text), let literal = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript(
+            "(function(){try{window.KeydaBot&&window.KeydaBot.prefill&&window.KeydaBot.prefill(\(literal));}catch(e){}})()"
+        )
     }
 
     @available(*, unavailable)
@@ -76,13 +127,25 @@ final class KeydaBotViewController: UIViewController {
     }
 
     deinit {
+        // A chat let go without `viewDidDisappear` (a host that drops a child without the
+        // appearance calls) must not hold the count up: no reply would ever be asked
+        // for again. The count is lock-guarded, so any thread will do.
+        if countedOnScreen { KeydaBotReplies.shared.chatWentAway() }
+
         // The proxy already keeps this from being a cycle; removing the handler is
         // hygiene so the content controller does not keep forwarding into a dead
         // proxy. Guarded on `isViewLoaded` because `webView` is lazy: touching it here
         // on a controller that never loaded would build a web view just to tear it down.
-        if isViewLoaded {
-            webView.configuration.userContentController
-                .removeScriptMessageHandler(forName: Self.scriptMessageHandlerName)
+        //
+        // A deinit is not main-actor isolated, though UIKit releases its view
+        // controllers on the main thread. Off it, the handler is left: hygiene is not
+        // worth touching WebKit from the wrong thread.
+        guard Thread.isMainThread else { return }
+        MainActor.assumeIsolated {
+            if isViewLoaded {
+                webView.configuration.userContentController
+                    .removeScriptMessageHandler(forName: Self.scriptMessageHandlerName)
+            }
         }
     }
 
@@ -119,18 +182,28 @@ final class KeydaBotViewController: UIViewController {
         return button
     }()
 
-    /// A blur circle behind the close button. The page picks its own background colour
-    /// from the owner's dashboard settings, so a flat colour here would eventually be
-    /// invisible against one of them.
-    private lazy var closeButtonBackground: UIVisualEffectView = {
-        let effect = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
-        effect.layer.cornerRadius = 22
-        effect.clipsToBounds = true
-        effect.translatesAutoresizingMaskIntoConstraints = false
-        return effect
+    /// The bar the close button lives in, ABOVE the chat rather than over it.
+    ///
+    /// It used to float over the top-right corner of the page — which is exactly
+    /// where the chat's header keeps its own buttons (the menu), so on every
+    /// iPhone the ✕ sat on top of a control the customer could then not reach.
+    /// A bar of its own, in the container colour, is what the Flutter and React
+    /// Native shells already do; the sheet's grabber sits in it too.
+    private lazy var closeBar: UIView = {
+        let bar = UIView()
+        bar.backgroundColor = Self.containerBackground
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        return bar
     }()
 
+    /// The bar's height below the safe area: a 44pt button with room around it.
+    private static let closeBarHeight: CGFloat = 52
+
     private lazy var failureView: UIView = makeFailureView()
+
+    /// The web view's bottom edge, moved up to the keyboard's top while it is on
+    /// screen (see `keyboardFrameWillChange`).
+    private lazy var webViewBottom: NSLayoutConstraint = webView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
 
     // MARK: - Lifecycle
 
@@ -147,38 +220,121 @@ final class KeydaBotViewController: UIViewController {
         view.addSubview(webView)
         view.addSubview(failureView)
         view.addSubview(activityIndicator)
-        view.addSubview(closeButtonBackground)
-        closeButtonBackground.contentView.addSubview(closeButton)
+
+        // Before the embedded branch returns: a chat in the host's own screen takes
+        // `setVisitor` / `clearVisitor` as the sheet does.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(visitorDidChange), name: Self.visitorChanged, object: nil
+        )
+
+        guard showsCloseButton else {
+            // Embedded: no bar of our own. The chat starts below whatever the screen has
+            // at its top (a navigation bar, the status bar) and runs to the bottom edge,
+            // where the page pads itself above a tab bar or the home indicator.
+            NSLayoutConstraint.activate([
+                webView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+                webView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+                webView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+                webViewBottom,
+
+                failureView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+                failureView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                failureView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                failureView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+                activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+                activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+            ])
+            observeKeyboard()
+            load()
+            return
+        }
+
+        view.addSubview(closeBar)
+        closeBar.addSubview(closeButton)
 
         NSLayoutConstraint.activate([
-            webView.topAnchor.constraint(equalTo: view.topAnchor),
-            webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            // The bar runs under the status bar or Dynamic Island when the sheet is
+            // full screen (iPhone landscape, some iPad sizes) and ends a fixed height
+            // below the safe area, so the button never sits under either.
+            closeBar.topAnchor.constraint(equalTo: view.topAnchor),
+            closeBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            closeBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            closeBar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: Self.closeBarHeight),
 
-            failureView.topAnchor.constraint(equalTo: view.topAnchor),
+            closeButton.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -8),
+            closeButton.bottomAnchor.constraint(equalTo: closeBar.bottomAnchor, constant: -4),
+            closeButton.widthAnchor.constraint(equalToConstant: 44),
+            closeButton.heightAnchor.constraint(equalToConstant: 44),
+
+            // Under the bar, and inside the side safe areas so a landscape notch
+            // never covers the chat's header or its composer. The BOTTOM stays at the
+            // view's edge: the page pads itself above the home indicator
+            // (env(safe-area-inset-bottom)), so its own background runs under it.
+            webView.topAnchor.constraint(equalTo: closeBar.bottomAnchor),
+            webView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+            webViewBottom,
+
+            failureView.topAnchor.constraint(equalTo: closeBar.bottomAnchor),
             failureView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             failureView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             failureView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
             activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-
-            // Anchored to the safe area so it never sits under the status bar or a
-            // Dynamic Island.
-            closeButtonBackground.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
-            closeButtonBackground.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
-            closeButtonBackground.widthAnchor.constraint(equalToConstant: 44),
-            closeButtonBackground.heightAnchor.constraint(equalToConstant: 44),
-
-            closeButton.topAnchor.constraint(equalTo: closeButtonBackground.contentView.topAnchor),
-            closeButton.leadingAnchor.constraint(equalTo: closeButtonBackground.contentView.leadingAnchor),
-            closeButton.trailingAnchor.constraint(equalTo: closeButtonBackground.contentView.trailingAnchor),
-            closeButton.bottomAnchor.constraint(equalTo: closeButtonBackground.contentView.bottomAnchor)
+            activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ])
 
         observeKeyboard()
         load()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // A keyboard that went away while this screen was not in a window (a tab switch
+        // with the keyboard up) never told us: start from no keyboard, the next frame
+        // change corrects it.
+        if webViewBottom.constant != 0 { webViewBottom.constant = 0 }
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        if !countedOnScreen {
+            countedOnScreen = true
+            KeydaBotReplies.shared.chatAppeared()
+        }
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        if countedOnScreen {
+            countedOnScreen = false
+            KeydaBotReplies.shared.chatWentAway()
+        }
+        // Gone for good, by any route: our close button, `KeydaBot.dismiss()`, a swipe,
+        // or the host dismissing this sheet — or the screen it sits on — itself. A
+        // screen merely covered by another (a full-screen picker) is still presented.
+        let presenterGone = presentingViewController == nil || presentingViewController?.isBeingDismissed == true
+        if isBeingDismissed || presenterGone { reportDismissed() }
+    }
+
+    fileprivate func reportDismissed() {
+        guard !dismissReported, onDidDismiss != nil else { return }
+        dismissReported = true
+        onDidDismiss?()
+    }
+
+    @objc private func visitorDidChange() {
+        applyVisitor()
+    }
+
+    /// `KeydaBot.setVisitor` reaching a page that is already up.
+    private func applyVisitor() {
+        guard hasRenderedChat else { return }
+        let json = KeydaBot.visitor?.json ?? "{}"
+        webView.evaluateJavaScript(
+            "(function(){try{window.KeydaBot&&window.KeydaBot.setVisitor&&window.KeydaBot.setVisitor(\(json));}catch(e){}})()"
+        )
     }
 
     // MARK: - Loading
@@ -186,7 +342,32 @@ final class KeydaBotViewController: UIViewController {
     private func load() {
         failureView.isHidden = true
         activityIndicator.startAnimating()
-        webView.load(URLRequest(url: botConfiguration.chatURL))
+        if !startDelivered && loadAttempted, pendingPrefill == nil {
+            // The first load failed before the page took its question: by script this
+            // time, once the page is up.
+            pendingPrefill = question
+        }
+        let url = loadAttempted || startDelivered ? botConfiguration.chatURL : urlWithStart()
+        loadAttempted = true
+        webView.load(URLRequest(url: url))
+    }
+
+    /// The chat URL with its start in the #fragment — the question, and
+    /// `KeydaBot.setVisitor`'s details. The page reads it as it loads and takes it off
+    /// the address. A fragment never reaches a server.
+    private func urlWithStart() -> URL {
+        var allowed = CharacterSet.urlFragmentAllowed
+        allowed.remove(charactersIn: "&=+#")
+        let encode: (String) -> String = { $0.addingPercentEncoding(withAllowedCharacters: allowed) ?? "" }
+        var items: [String] = []
+        if let question = question { items.append("q=" + encode(question)) }
+        if let visitor = KeydaBot.visitor { items += visitor.fragmentItems(encode: encode) }
+        guard !items.isEmpty,
+              var parts = URLComponents(url: botConfiguration.chatURL, resolvingAgainstBaseURL: false) else {
+            return botConfiguration.chatURL
+        }
+        parts.percentEncodedFragment = items.joined(separator: "&")
+        return parts.url ?? botConfiguration.chatURL
     }
 
     /// A startup redirect is followed only while the first load is still in flight and
@@ -264,6 +445,18 @@ final class KeydaBotViewController: UIViewController {
             payload = message.body as? [String: Any]
         }
 
+        // The chats waiting for the business's reply (`KeydaBotReplies`), validated there.
+        // A chat that is loaded but not on screen still draws a reply; that is not the
+        // customer seeing it.
+        if payload?["type"] as? String == "keyda:waits" {
+            KeydaBotReplies.shared.onWaits(
+                payload?["waits"] as? [Any],
+                fromOnScreen: countedOnScreen,
+                chat: botConfiguration.chatURL.absoluteString
+            )
+            return
+        }
+
         guard let theme = payload, theme["type"] as? String == "keyda:theme" else { return }
 
         let style: UIUserInterfaceStyle
@@ -276,18 +469,15 @@ final class KeydaBotViewController: UIViewController {
     }
 
     /// One switch flips the whole chrome: `overrideUserInterfaceStyle` re-resolves
-    /// `containerBackground`, the close button's `.label` tint and the
-    /// `.systemChromeMaterial` blur behind it, and `preferredStatusBarStyle` (`.default`)
-    /// reads the same trait — so there is nothing to recolour by hand.
+    /// `containerBackground` (the view and the close bar), the close button's
+    /// `.label` tint, and `preferredStatusBarStyle` (`.default`) reads the same
+    /// trait — so there is nothing to recolour by hand.
     private func apply(_ style: UIUserInterfaceStyle) {
-        // Script messages are delivered on the main thread, but UI is touched from
-        // here only, so make the guarantee explicit rather than inherited.
-        let work = { [weak self] in
-            guard let self = self, self.overrideUserInterfaceStyle != style else { return }
-            self.overrideUserInterfaceStyle = style
-            self.setNeedsStatusBarAppearanceUpdate()
-        }
-        if Thread.isMainThread { work() } else { DispatchQueue.main.async(execute: work) }
+        // Main thread: WebKit delivers script messages there, and this controller is
+        // main-actor isolated, which Swift 6 checks at every caller.
+        guard overrideUserInterfaceStyle != style else { return }
+        overrideUserInterfaceStyle = style
+        setNeedsStatusBarAppearanceUpdate()
     }
 
     // MARK: - Keyboard
@@ -307,40 +497,36 @@ final class KeydaBotViewController: UIViewController {
         )
     }
 
-    /// Feeds the keyboard's height to the page as extra bottom safe area.
+    /// Ends the web view at the keyboard's top edge while the keyboard is up.
     ///
-    /// `additionalSafeAreaInsets` changes this view's safe area, subviews inherit it,
-    /// and `WKWebView` publishes its own safe area to the page as
-    /// `env(safe-area-inset-bottom)`. So a composer pinned to the bottom of the page
-    /// rises with the keyboard using the padding rule it already has.
-    ///
-    /// Without this the container keeps reporting only the home-indicator inset while
-    /// the keyboard is up, and the composer sits behind the keys — the single most
-    /// common defect in WebView chat. `keyboardDisplayRequiresUserAction` is unrelated:
-    /// it is about whether script may focus a field, not about what covers it.
+    /// The page then simply has less room: nothing of it is under the keys, and its
+    /// own layout (composer at the bottom, header at the top) holds. Up to 0.1.4 this
+    /// fed the keyboard to the page as extra bottom safe area instead, on top of
+    /// WebKit's own shrinking of the page's visible area — the composer rose a
+    /// second keyboard-height, up under the header, and in landscape the two
+    /// disagreed and it ended up behind the keys. The Flutter and React Native shells
+    /// shrink their web view the same way, and both fit exactly.
     @objc private func keyboardFrameWillChange(_ notification: Notification) {
         // While we are off screen, the keyboard belongs to somebody else's screen.
         guard view.window != nil else { return }
         guard let endFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
 
-        let keyboardFrame = view.convert(endFrame, from: nil)
+        // The keyboard's frame is in the screen's coordinates. `from: nil` would read it
+        // as the window's, which is only the same while the window sits at the screen's
+        // origin — not in Stage Manager, Slide Over or Split View on an iPad.
+        guard let screen = view.window?.windowScene?.screen else { return }
+        let keyboardFrame = view.convert(endFrame, from: screen.coordinateSpace)
         let overlap = max(0, view.bounds.maxY - keyboardFrame.minY)
-
-        // `additionalSafeAreaInsets` is added to the real inset, and the real inset
-        // (the home indicator) is already inside `overlap` — the keyboard is drawn over
-        // it. Passing `overlap` straight through would lift the composer by an extra
-        // 34pt and leave a gap under it.
-        let systemBottomInset = view.safeAreaInsets.bottom - additionalSafeAreaInsets.bottom
-        setBottomInset(max(0, overlap - systemBottomInset), notification: notification)
+        setKeyboardOverlap(overlap, notification: notification)
     }
 
     @objc private func keyboardWillHide(_ notification: Notification) {
         guard view.window != nil else { return }
-        setBottomInset(0, notification: notification)
+        setKeyboardOverlap(0, notification: notification)
     }
 
-    private func setBottomInset(_ inset: CGFloat, notification: Notification) {
-        guard additionalSafeAreaInsets.bottom != inset else { return }
+    private func setKeyboardOverlap(_ overlap: CGFloat, notification: Notification) {
+        guard webViewBottom.constant != -overlap else { return }
 
         let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
         let curve = notification.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt ?? 0
@@ -350,7 +536,7 @@ final class KeydaBotViewController: UIViewController {
         let options = UIView.AnimationOptions(rawValue: curve << 16)
 
         UIView.animate(withDuration: duration, delay: 0, options: options, animations: {
-            self.additionalSafeAreaInsets.bottom = inset
+            self.webViewBottom.constant = -overlap
             self.view.layoutIfNeeded()
         })
     }
@@ -370,11 +556,7 @@ final class KeydaBotViewController: UIViewController {
         // The chat is a web app; with JavaScript off there is no chat at all. Both
         // switches default to on, and both are set anyway so that a future WebKit
         // default cannot quietly turn the product off.
-        if #available(iOS 14.0, *) {
-            configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-        } else {
-            enableJavaScriptOnLegacyOS(configuration.preferences)
-        }
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
 
         // A voice note or a video in an answer plays where the conversation is instead
         // of taking over the screen and hiding it.
@@ -414,14 +596,6 @@ final class KeydaBotViewController: UIViewController {
 
         webView.translatesAutoresizingMaskIntoConstraints = false
         return webView
-    }
-
-    /// `WKPreferences.javaScriptEnabled` is the only switch that exists on iOS 13 and
-    /// is deprecated from iOS 14. Marking this wrapper deprecated too is what keeps the
-    /// call from emitting a warning in every integrator's build.
-    @available(iOS, deprecated: 14.0, message: "Use WKWebpagePreferences.allowsContentJavaScript.")
-    private func enableJavaScriptOnLegacyOS(_ preferences: WKPreferences) {
-        preferences.javaScriptEnabled = true
     }
 
     private func makeFailureView() -> UIView {
@@ -491,7 +665,7 @@ extension KeydaBotViewController: WKNavigationDelegate {
     /// and find the chat exactly as they left it.
     func webView(_ webView: WKWebView,
                  decidePolicyFor navigationAction: WKNavigationAction,
-                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+                 decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
         guard let url = navigationAction.request.url else {
             decisionHandler(.cancel)
             return
@@ -557,7 +731,7 @@ extension KeydaBotViewController: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView,
                  decidePolicyFor navigationResponse: WKNavigationResponse,
-                 decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+                 decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void) {
         // A well-formed client id that the platform does not know still passes
         // validation, so the only signal is the status code. Log it loudly for the
         // developer and let the server's own page render: it says what is wrong, and a
@@ -577,8 +751,19 @@ extension KeydaBotViewController: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         hasRenderedChat = true
+        startDelivered = true
         activityIndicator.stopAnimating()
         failureView.isHidden = true
+        // Every load, the first included: a reload has no fragment, and a `setVisitor` or
+        // `clearVisitor` made while the page loaded never reached it. `{}` for none, so a
+        // sign-out during the first load takes back what its fragment offered.
+        applyVisitor()
+        // A question that arrived while the page was loading; the page keeps it until
+        // its composer exists.
+        if let waiting = pendingPrefill {
+            pendingPrefill = nil
+            prefill(waiting)
+        }
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -612,7 +797,7 @@ extension KeydaBotViewController: WKNavigationDelegate {
 @available(iOSApplicationExtension, unavailable)
 extension KeydaBotViewController: UIAdaptivePresentationControllerDelegate {
     func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
-        onDidDismiss?()
+        reportDismissed()
     }
 }
 #endif

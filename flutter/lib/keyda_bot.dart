@@ -7,4 +7,4 @@ library;
 
 export 'src/chat_page.dart' show KeydaExternalLinkHandler;
 export 'src/client_id.dart' show KeydaBotConfigError, kKeydaDefaultBaseUrl;
-export 'src/keyda_bot.dart' show KeydaBot;
+export 'src/keyda_bot.dart' show KeydaBot, KeydaBotChat;

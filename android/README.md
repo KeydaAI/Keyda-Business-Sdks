@@ -15,7 +15,7 @@ taking your app down with it.
 
 ## Install
 
-Published on **JitPack**; `v0.1.4` resolves today (the repository is tagged, and JitPack builds
+Published on **JitPack**; `v0.2.0` resolves today (the repository is tagged, and JitPack builds
 the `android/` project from that tag):
 
 ```kotlin
@@ -28,16 +28,16 @@ dependencyResolutionManagement {
 }
 
 // app/build.gradle.kts
-implementation("com.github.KeydaAI:keyda-business-sdks:v0.1.4")
+implementation("com.github.KeydaAI:keyda-business-sdks:v0.2.0")
 ```
 
 To build against an unreleased commit instead, publish it locally from a clone:
 
 ```bash
-cd android && ./gradlew :keyda-bot:publishToMavenLocal   # in.keyda:keyda-bot:0.1.4
+cd android && ./gradlew :keyda-bot:publishToMavenLocal   # in.keyda:keyda-bot:0.2.0
 ```
 
-and add `mavenLocal()` to your repositories, with `implementation("in.keyda:keyda-bot:0.1.4")`.
+and add `mavenLocal()` to your repositories, with `implementation("in.keyda:keyda-bot:0.2.0")`.
 `in.keyda:keyda-bot` on Maven Central is the intended long-term home; it is not there yet, and
 this README will say so until it is.
 
@@ -70,12 +70,107 @@ writes the backticks for you when it auto-imports.
 | Call | Does |
 |---|---|
 | `KeydaBot.init(context, clientId, baseUrl = "https://keyda.in/business")` | stores and validates the configuration |
-| `KeydaBot.show(activity)` | opens the chat over your app |
+| `KeydaBot.show(activity, question = null)` | opens the chat over your app; `question` goes in its message box, unsent |
 | `KeydaBot.dismiss()` | closes it; safe when it is not open, safe from any thread |
 | `KeydaBot.isShowing` | whether the chat is on screen right now |
+| `KeydaBot.listener` | optional `onShow()` / `onDismiss()` for the full-screen chat, and `onReply()` (below) |
+| `KeydaBot.setVisitor(name, phone, email)` / `clearVisitor()` | your signed-in customer, offered in the chat's forms (below) |
+| `KeydaBot.hasUnreadReply` / `checkForReplies()` | a reply from the business the customer has not seen (below) |
+| `KeydaBotView(context)` | the chat as a view of your own screen (below) |
 
-There is no message API, no unread count and no identify call, because there is nothing behind
-them yet. A method that does not work end to end is worse than a missing one.
+There is no message API and no identify call. The one unread signal is a reply from a person at
+the business that the chat has not shown yet — which the server can answer honestly. A method that
+does not work end to end is worse than a missing one.
+
+### Open with a question
+
+```kotlin
+askButton.setOnClickListener { KeydaBot.show(this, "Is this in stock?") }
+```
+
+The question is put in the chat's message box; the customer reads it and taps send. It travels in
+the URL's #fragment, so it never reaches a server log. Called again while the chat is open, it
+replaces what is in the box. Up to 500 characters, as one line: the chat joins lines and collapses
+runs of spaces.
+
+### Your signed-in customer
+
+```kotlin
+KeydaBot.setVisitor(name = user.name, phone = user.phone, email = user.email)   // any of them
+KeydaBot.clearVisitor()                                                          // on sign-out
+```
+
+The chat then does not ask what your app already knows. The details are **offered, never sent**:
+they appear in "talk to a person", an order, a booking, and a welcome question for a name, a phone
+number or an email, and the customer submits them. Until then nothing leaves the phone — they
+travel in the URL's #fragment. They are your app's word, not a verified identity. A value that
+does not pass the checks the chat itself makes when the customer submits it is dropped whole, never
+cut: a name of up to 80 characters; a phone number of 8 to 15 digits, written with digits, spaces
+and `+ - ( ) .`, with no `+0`; an email address of up to 254 characters with a dot in its domain.
+It applies to the chats open now, to an embedded chat that was off its screen when you called it
+(as soon as it is back), and to every one after.
+
+### A reply while the chat is closed
+
+A customer who asks for a person leaves their details and closes the chat; you answer from the
+dashboard later. The chat shows the answer the next time it opens. This tells your app it is
+there:
+
+```kotlin
+KeydaBot.listener = object : KeydaBot.Listener {
+    override fun onReply() { chatButton.showBadge() }    // once per new reply
+    override fun onShow() { chatButton.hideBadge() }
+}
+// on resume: if (KeydaBot.hasUnreadReply) chatButton.showBadge()
+```
+
+From Java the getter is `KeydaBot.hasUnreadReply()`.
+
+The SDK asks when your app comes to the foreground — once a minute at most, and only for chats in
+which the customer asked for a person in the last 14 days. `KeydaBot.checkForReplies()` asks now
+(once in 10 seconds at most). `hasUnreadReply` stays true until the customer opens the chat (full
+screen or a `KeydaBotView` on screen), which shows the reply. A chat that is loaded but out of
+sight — a `KeydaBotView` in a background tab, a GONE one, or one whose `active` is false — does
+not count as seen, even though it draws the reply. The list of chats to ask about is
+the page's own — chat ids and times, kept in a file in `noBackupFilesDir`; nothing else is stored
+or sent. There is no push: a reply is noticed when the app is opened.
+
+### The chat inside one of your own screens: `KeydaBotView`
+
+For a Help tab or a support screen, instead of the full-screen chat:
+
+```kotlin
+val chat = KeydaBotView(this).apply { question = "Is this in stock?" }   // after init()
+container.addView(chat)
+// when the screen is gone for good:
+chat.destroy()
+```
+
+From Compose: `AndroidView(factory = { KeydaBotView(it) }, onRelease = { it.destroy() })`.
+
+Your screen owns what is around the view, so four things are yours:
+
+* **Back.** With a sheet open in the chat (an item, the cart, a booking) back should close it:
+  `if (!chat.goBack()) /* your own back */`. `chat.onCanGoBackChanged` tells you when
+  `canGoBack` changes — what an `OnBackPressedCallback.isEnabled` wants, so predictive back keeps
+  working for your screen when no sheet is open.
+* **Insets and the keyboard.** The view pads for nothing. Lay it out clear of the system bars and
+  let the window resize for the keyboard (`adjustResize`, or `imePadding()` in Compose).
+* **`active`.** True by default. Set it false while the view is attached and visible but not what
+  the customer is looking at — a ViewPager2 page that is not selected, a tab that keeps its views
+  visible — and true when it is selected again. The view already counts itself off screen when it
+  is GONE or its window is hidden; `active` is for the cases it cannot see, and on Android 5–6
+  (API 21–23), where only the window is tracked, for a hidden tab too. It decides whether a reply
+  the chat draws counts as seen (above).
+
+  ```kotlin
+  AndroidView(factory = { KeydaBotView(it) }, update = { it.active = tab == Tab.Help }, onRelease = { it.destroy() })
+  // ViewPager2 page fragment: onResume() { chat.active = true }  onPause() { chat.active = false }
+  ```
+* **`destroy()`** when the screen is gone, or the WebView keeps the whole screen in memory.
+
+`prefill(question)` puts a question in a chat already on screen. The file picker, links, the
+theme and the retry screen work exactly as in the full-screen chat.
 
 ### Overriding the base URL
 
@@ -103,14 +198,17 @@ throw at your users.
 
 ## Requirements
 
-* **minSdk 21** (Android 5.0), **compileSdk 34**
-* **JVM target 17** for Java and Kotlin (AGP 8 itself requires JDK 17)
-* Built with AGP 8.9.1, Kotlin 2.1.20, Gradle 8.13 (the wrapper in this directory)
+* **minSdk 21** (Android 5.0), **compileSdk 36** (Android 16). Your app can compile against any
+  SDK version: the AAR asks for no minimum.
+* **JVM target 17** for Java and Kotlin (AGP 9 itself requires JDK 17)
+* Built with AGP 9.4.1, Kotlin 2.4.21, Gradle 9.8.1 (the wrapper in this directory)
 * Kotlin is not required in your app
 * **No dependencies beyond `kotlin-stdlib`.** Not AndroidX, not appcompat, nothing else — the
   published POM declares only `org.jetbrains.kotlin:kotlin-stdlib`, which a Kotlin app already
-  has and a Java app gets for free. The library is compiled with Kotlin `apiVersion` /
-  `languageVersion` 1.9, so a consumer on a Kotlin 1.9+ compiler can read its metadata. The Activity extends
+  has and a Java app gets for free (version 2.1.20, the same as 0.1.2–0.1.4 asked for). The
+  library is compiled with Kotlin `apiVersion` / `languageVersion` 2.0, the oldest the 2.4
+  compiler writes. A consumer needs a Kotlin 2.0+ compiler: the 2.1.20 stdlib the POM asks for is
+  more than a 1.9 compiler reads. The Activity extends
   `android.app.Activity` and the SDK ships no resources at all, so there is no `R` class, no
   strings to merge and no colours to collide with yours. Check it yourself with
   `./gradlew :app:dependencies`.
@@ -148,16 +246,41 @@ permission and reaches the gallery and the documents providers without one.
   has — and returns every file the customer chose, not just the first. Cancelling is answered too:
   a file request left unanswered makes the WebView ignore the attach button for the rest of the
   conversation. There is no camera path, on purpose (see Limitations).
-* **Back** goes back through the chat's own history first, then closes. Predictive back (API 33+)
-  is registered as well as the classic callback.
+* **Back closes what the customer is looking at first.** With a sheet open over the conversation
+  — an item over the menu, the cart, a booking — back closes that sheet; with none open it closes
+  the chat. The page answers through `KeydaBot.back()`; a page too old to have it, or one that
+  does not answer within half a second, closes the chat. Predictive back (API 33+) is registered
+  as well as the classic callback, so a host app targeting Android 16 behaves the same.
 * **A slow connection shows a spinner, then a retry.** On 2G and patchy 3G the page can take
   several seconds; a blank white screen for those seconds reads as a broken app.
 * **If Android kills the WebView's render process**, the chat view is rebuilt and the customer is
   offered a retry. The default behaviour would take your whole app down with it.
 * **No analytics, no device identifiers, no cookies of ours.** The only thing added to the
-  User-Agent is `KeydaBot/<version> (Android)`, which carries a version and nothing else.
+  User-Agent is `KeydaBot/<version> (Android)`, which carries a version and nothing else. The
+  reply check is a plain `HttpURLConnection` and sends no cookie of its own; if your app installs
+  a process-wide `CookieHandler`, that handler adds to it whatever cookies your app itself stored
+  for the chat's host.
 * **R8**: nothing needs to be added to your `proguard-rules.pro`. The AAR ships
   `consumer-rules.pro`, which explains what is kept and why.
+
+## Inside the chat
+
+All of this is the hosted page's, so it reaches your app without an SDK update:
+
+* **A welcome message with suggestion buttons**, in the language the bot is set to; the header
+  says "AI assistant".
+* **The conversation is kept on the device for 24 hours**, and the chat makes no visitor id.
+  (On a website a conversation lasts one browser tab.)
+* **Orders and bookings**, when the business takes them: a cart, booking dates and times, a
+  link to call the business when an order or booking has waited too long, and "Add to
+  calendar" for a confirmed booking.
+* **Attachments**: photos (JPEG, PNG, WebP, GIF) and PDF, DOCX, TXT, CSV and MD files.
+* **Links leave the chat**: `tel:` opens the dialer, `mailto:` the mail app, and web links the
+  browser.
+* **"Add to calendar" is a link to an `.ics` file.** iOS opens it in Calendar as a calendar to
+  subscribe to, so the booking arrives as a small calendar of its own rather than as one event
+  in yours. Android offers the phone's calendar app when that app imports `.ics` files — current
+  Google Calendar does — and otherwise the browser downloads the file.
 
 ## Theme
 
@@ -177,11 +300,13 @@ the navigation bar.
 Stated plainly, because finding these out after shipping is worse:
 
 * **No offline.** It is a hosted page. No connection, no chat — the customer gets the retry screen.
-* **No push notifications.** Nothing arrives while the chat is closed.
+* **No push notifications.** A reply that arrives while your app is closed is noticed when the app
+  is next opened (`onReply`, above), not before.
 * **No theme API.** The owner sets the theme in the dashboard and the page carries it (see
   "Theme" above). There is no call to restyle the chat, or the screen around it, from your app.
-* **No inline or embedded view.** The chat is a full-screen Activity; there is no fragment or view
-  you can put inside one of your own screens.
+* **Embedded, the screen is yours.** A `KeydaBotView` pads for no system bar and handles back only
+  when you ask it to (`goBack()`); see above. It cannot tell an unselected ViewPager2 page from the
+  selected one: say so with `active`.
 * **Seven English strings.** The retry screen's copy, and the toast shown when nothing on the
   phone can open a link or pick a file, are compiled in, because the AAR ships no resources and
   therefore no translations. Everything the customer reads *inside* the chat comes
@@ -198,7 +323,7 @@ Stated plainly, because finding these out after shipping is worse:
 ```bash
 cd android
 ./gradlew :keyda-bot:assembleRelease      # keyda-bot/build/outputs/aar/
-./gradlew :keyda-bot:publishToMavenLocal  # in.keyda:keyda-bot:0.1.4
+./gradlew :keyda-bot:publishToMavenLocal  # in.keyda:keyda-bot:0.2.0
 ./gradlew :keyda-bot:lintRelease          # kept at zero errors
 ```
 

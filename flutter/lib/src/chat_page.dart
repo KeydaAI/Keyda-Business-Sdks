@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -9,7 +10,9 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import 'client_id.dart';
+import 'replies.dart';
 import 'sdk_version.dart';
+import 'visitor.dart';
 
 /// Called when the chat page tries to leave its own origin — a "Powered by
 /// Keyda" tap, a `mailto:`, a `tel:`, a WhatsApp or UPI deep link.
@@ -29,6 +32,10 @@ class KeydaChatPage extends StatefulWidget {
   const KeydaChatPage({
     required this.chatUrl,
     this.onExternalLink,
+    this.question,
+    this.embedded = false,
+    this.onCanGoBackChanged,
+    this.focused = true,
     super.key,
   });
 
@@ -38,8 +45,26 @@ class KeydaChatPage extends StatefulWidget {
   /// Optional host handler for links that leave [chatUrl]'s origin.
   final KeydaExternalLinkHandler? onExternalLink;
 
+  /// A question for the composer, unsent: in the URL's #fragment at the first
+  /// load (never in a server log); a new value later goes into the live chat.
+  final String? question;
+
+  /// Embedded in a screen of the host's (`KeydaBotChat`): no close bar, no
+  /// status-bar styling, and Android back closes a sheet the chat has open and
+  /// is otherwise the host's.
+  final bool embedded;
+
+  /// Told when a sheet opens over the conversation (true) and when the last
+  /// one closes (false).
+  final ValueChanged<bool>? onCanGoBackChanged;
+
+  /// Embedded only: is this screen the one in front? While false, back is the
+  /// host's (the chat would otherwise close a sheet nobody can see) and the
+  /// chat counts as off screen, so the SDK checks for replies itself.
+  final bool focused;
+
   @override
-  State<KeydaChatPage> createState() => _KeydaChatPageState();
+  State<KeydaChatPage> createState() => KeydaChatPageState();
 }
 
 /// CONTRACT.md rule 7: the two backgrounds a shell paints. They are the hosted
@@ -65,10 +90,56 @@ const Set<String> _imageExtensions = <String>{
   '.heif',
 };
 
-class _KeydaChatPageState extends State<KeydaChatPage> {
+/// CONTRACT.md rule 10: closes the page's top sheet and answers whether there
+/// was one. Wrapped so that a page without `back()`, or one that throws,
+/// answers false: the chat closes, as it always did.
+const String _backScript =
+    "(function(){try{return !!(window.KeydaBot&&typeof window.KeydaBot.back==='function'&&window.KeydaBot.back());}catch(e){return false;}})()";
+
+/// How long back waits for the page's answer before closing the chat anyway.
+const Duration _backAnswerTimeout = Duration(milliseconds: 500);
+
+/// The page takes up to 500 characters; anything longer is cut, not refused.
+const int _questionMax = 500;
+
+/// Trimmed, without lone UTF-16 halves, and cut at 500 characters — whole
+/// ones: a cut by UTF-16 unit can leave half an emoji. A half is never sent:
+/// `Uri.encodeComponent` and the platform channel turn one into U+FFFD, a
+/// character the customer never typed.
+@visibleForTesting
+String cleanQuestion(String? question) {
+  final String q = withoutLoneSurrogates((question ?? '').trim());
+  return q.runes.length > _questionMax ? String.fromCharCodes(q.runes.take(_questionMax)) : q;
+}
+
+/// The chat page's state. Public in name only (the library does not export
+/// it): `KeydaBot` reaches the full-screen one to put a question in its box.
+class KeydaChatPageState extends State<KeydaChatPage> {
   late final WebViewController _controller;
   bool _isLoading = true;
   bool _failed = false;
+
+  /// The page's sheet count (`keyda:sheets`, CONTRACT.md rule 10).
+  int _sheets = 0;
+
+  /// The question this chat was opened with or last given.
+  String _asked = '';
+
+  /// A question that arrived before the page could take it.
+  String? _pendingPrefill;
+
+  /// The fallback for a back press the page has not answered yet.
+  Timer? _pendingBack;
+
+  /// A page has rendered here, so the start (question, visitor) was delivered.
+  /// Every later load — Retry — takes the plain chat URL: the same URL plus a
+  /// #fragment is a same-document jump that loads nothing, and a question the
+  /// customer already sent must not come back into the box.
+  bool _startDelivered = false;
+  bool _loadAttempted = false;
+
+  /// Counted as on screen by the reply check (KeydaReplies).
+  bool _countedOnScreen = false;
 
   /// The scheme the chrome is drawn in. Null until something decides it: the
   /// device scheme on the first build, then whatever the page announces
@@ -84,6 +155,10 @@ class _KeydaChatPageState extends State<KeydaChatPage> {
   @override
   void initState() {
     super.initState();
+    keydaVisitor.addListener(_applyVisitor);
+    // A chat on screen shows the business's replies itself; the SDK asks only
+    // while none is.
+    _setOnScreen(!widget.embedded || widget.focused);
     // No DOM storage call, deliberately: the shared WebViewController API has
     // no switch for it, both endorsed implementations enable it, and the
     // visitor's conversation survives an app restart because they do; nothing
@@ -120,60 +195,103 @@ class _KeydaChatPageState extends State<KeydaChatPage> {
     }
   }
 
-  /// Answers the page's file request with photos from the system gallery.
+  /// Answers the page's file request: photos from the system photo picker
+  /// when the page asks for images only, the system's file picker (photos and
+  /// documents) otherwise.
   ///
-  /// Photos only. image_picker is the picker the Flutter team publishes (rule
-  /// 5 rules out the third-party ones) and it picks images; a request whose
-  /// accept list names no image type — a documents-only input — is answered
-  /// "nothing chosen", which the page treats as a cancel. The camera is not
-  /// offered even when the page asks for capture: that would put the host
-  /// app's CAMERA permission semantics in play, which no README here promises
-  /// to handle. Nothing is ever thrown out of here — a tap that cannot be
-  /// served is a cancel, not an exception in someone else's app (rule 6).
+  /// Both pickers are the Flutter team's own (rule 5 rules out third-party
+  /// ones) and neither needs a permission. Up to 0.1.4 this answered
+  /// everything with photos only, and the chat's attach button — which takes
+  /// PDF, DOCX, TXT, CSV and MD as well — could not send a document. The
+  /// camera is not offered even when the page asks for capture: that would
+  /// put the host app's CAMERA permission semantics in play, which no README
+  /// here promises to handle. Nothing is ever thrown out of here — a tap that
+  /// cannot be served is a cancel, not an exception in someone else's app
+  /// (rule 6).
   Future<List<String>> _selectFiles(FileSelectorParams params) async {
-    if (!_acceptsImages(params.acceptTypes)) {
-      return const <String>[];
-    }
+    final bool multiple = params.mode == FileSelectorMode.openMultiple;
     List<XFile> picked = const <XFile>[];
     try {
-      final ImagePicker picker = ImagePicker();
-      if (params.mode == FileSelectorMode.openMultiple) {
-        picked = await picker.pickMultiImage();
+      if (_onlyImages(params.acceptTypes)) {
+        final ImagePicker picker = ImagePicker();
+        if (multiple) {
+          picked = await picker.pickMultiImage();
+        } else {
+          final XFile? one =
+              await picker.pickImage(source: ImageSource.gallery);
+          picked = one == null ? const <XFile>[] : <XFile>[one];
+        }
       } else {
-        final XFile? one = await picker.pickImage(source: ImageSource.gallery);
-        picked = one == null ? const <XFile>[] : <XFile>[one];
+        final List<XTypeGroup> groups = _typeGroups(params.acceptTypes);
+        if (multiple) {
+          picked = await openFiles(acceptedTypeGroups: groups);
+        } else {
+          final XFile? one = await openFile(acceptedTypeGroups: groups);
+          picked = one == null ? const <XFile>[] : <XFile>[one];
+        }
       }
     } catch (error, stack) {
-      // "already_active" when a second tap lands while the gallery is up, or
-      // a device with no gallery app at all. Reported the way Flutter reports
+      // "already_active" when a second tap lands while a picker is up, or a
+      // device with no picker app at all. Reported the way Flutter reports
       // any other failure; the page gets a cancel.
-      _report(error, stack, 'picking a photo for the Keyda chat');
+      _report(error, stack, 'picking a file for the Keyda chat');
     }
     // The Android implementation parses each entry with Uri.parse and the
-    // WebView reads the file from the app's own cache, where image_picker
-    // put its copy. An empty list is the cancel.
+    // WebView reads the file from the app's own cache, where both pickers put
+    // their copy (under its own name, which is how the page tells a PDF from
+    // a photo). An empty list is the cancel.
     return picked
         .map((XFile file) => Uri.file(file.path).toString())
         .toList(growable: false);
   }
 
-  /// Whether an accept list admits an image at all: an empty list, `*/*`, any
-  /// `image/…` type or an image extension does; a list of document types
-  /// alone does not.
-  bool _acceptsImages(List<String> acceptTypes) {
-    if (acceptTypes.isEmpty) {
-      return true;
-    }
+  /// Whether the accept list names images and nothing else, which is when
+  /// the photo picker — the better place to find a photo — is the answer.
+  bool _onlyImages(List<String> acceptTypes) {
+    bool any = false;
     for (final String raw in acceptTypes) {
       final String type = raw.trim().toLowerCase();
-      if (type.isEmpty || type == '*/*' || type.startsWith('image/')) {
-        return true;
+      if (type.isEmpty) {
+        continue;
       }
-      if (_imageExtensions.contains(type)) {
-        return true;
+      if (type.startsWith('image/') || _imageExtensions.contains(type)) {
+        any = true;
+      } else {
+        return false;
       }
     }
-    return false;
+    return any;
+  }
+
+  /// The page's accept list as the file picker's filter: MIME types as they
+  /// are, `.ext` entries as extensions. An empty list (or `*/*`) is any file.
+  List<XTypeGroup> _typeGroups(List<String> acceptTypes) {
+    final List<String> mimeTypes = <String>[];
+    final List<String> extensions = <String>[];
+    for (final String raw in acceptTypes) {
+      final String type = raw.trim().toLowerCase();
+      if (type.isEmpty) {
+        continue;
+      }
+      if (type == '*/*') {
+        return const <XTypeGroup>[];
+      }
+      if (type.startsWith('.')) {
+        extensions.add(type.substring(1));
+      } else if (type.contains('/')) {
+        mimeTypes.add(type);
+      }
+    }
+    if (mimeTypes.isEmpty && extensions.isEmpty) {
+      return const <XTypeGroup>[];
+    }
+    return <XTypeGroup>[
+      XTypeGroup(
+        label: 'Files',
+        mimeTypes: mimeTypes,
+        extensions: extensions,
+      ),
+    ];
   }
 
   /// Adds `KeydaBot/<version> (Flutter)` to the User-Agent, then loads.
@@ -209,7 +327,99 @@ class _KeydaChatPageState extends State<KeydaChatPage> {
     if (!mounted) {
       return;
     }
-    await _controller.loadRequest(widget.chatUrl);
+    await _controller.loadRequest(_startUrl());
+  }
+
+  /// The chat URL with its start in the #fragment — the question and
+  /// `KeydaBot.setVisitor`'s details: the page reads it as it loads and takes
+  /// it off the address. A fragment never reaches a server.
+  Uri _startUrl() {
+    final String q = cleanQuestion(widget.question);
+    _asked = q;
+    if (_startDelivered || _loadAttempted) {
+      // Not delivered yet (the first load failed): by script, once the page is up.
+      if (!_startDelivered && q.isNotEmpty) {
+        _pendingPrefill ??= q;
+      }
+      _loadAttempted = true;
+      return widget.chatUrl;
+    }
+    _loadAttempted = true;
+    final List<String> items = <String>[
+      if (q.isNotEmpty) 'q=${Uri.encodeComponent(q)}',
+      ...?keydaVisitor.value?.fragmentItems(),
+    ];
+    if (items.isEmpty) {
+      return widget.chatUrl;
+    }
+    return widget.chatUrl.replace(fragment: items.join('&'));
+  }
+
+  /// `KeydaBot.setVisitor` reaching a page that is up — `{}` for none.
+  void _applyVisitor() {
+    if (_isLoading || _failed || !_startDelivered) {
+      return;
+    }
+    final String json = keydaVisitor.value?.toJson() ?? '{}';
+    unawaited(
+      _controller
+          .runJavaScript(
+            '(function(){try{window.KeydaBot&&window.KeydaBot.setVisitor&&'
+            'window.KeydaBot.setVisitor($json);}catch(e){}})()',
+          )
+          .catchError((Object _) {}),
+    );
+  }
+
+  void _setOnScreen(bool onScreen) {
+    if (onScreen == _countedOnScreen) {
+      return;
+    }
+    _countedOnScreen = onScreen;
+    if (onScreen) {
+      KeydaReplies.instance.chatAppeared();
+    } else {
+      KeydaReplies.instance.chatWentAway();
+    }
+  }
+
+  /// Puts [question] in the chat's message box, unsent — the customer still
+  /// taps send. Before the page has loaded it waits for it.
+  void prefill(String question) {
+    final String q = cleanQuestion(question);
+    if (q.isEmpty) {
+      return;
+    }
+    _asked = q;
+    if (_isLoading || _failed) {
+      _pendingPrefill = q;
+      return;
+    }
+    unawaited(
+      _controller
+          .runJavaScript(
+            '(function(){try{window.KeydaBot&&window.KeydaBot.prefill&&'
+            'window.KeydaBot.prefill(${jsonEncode(q)});}catch(e){}})()',
+          )
+          .catchError((Object _) {}),
+    );
+  }
+
+  @override
+  void didUpdateWidget(KeydaChatPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Only a CHANGED question: a navigator rebuild hands back the route's
+    // original one, which must not land over a newer one or what the customer
+    // has typed since.
+    if (widget.question != oldWidget.question) {
+      final String q = cleanQuestion(widget.question);
+      if (q.isNotEmpty && q != _asked) {
+        prefill(q);
+      }
+    }
+    if (widget.focused != oldWidget.focused) {
+      _setOnScreen(!widget.embedded || widget.focused);
+    }
   }
 
   @override
@@ -244,6 +454,23 @@ class _KeydaChatPageState extends State<KeydaChatPage> {
       return;
     }
     if (decoded is! Map<String, dynamic>) {
+      return;
+    }
+    if (decoded['type'] == 'keyda:sheets') {
+      final Object? open = decoded['open'];
+      if (open is num && open >= 0 && open <= 64 && mounted) {
+        _setSheets(open.toInt());
+      }
+      return;
+    }
+    if (decoded['type'] == 'keyda:waits') {
+      // The chats waiting for the business's reply; validated there. A chat
+      // out of sight (focused: false) draws a reply nobody sees.
+      KeydaReplies.instance.onWaits(
+        decoded['waits'],
+        chatUrl: widget.chatUrl,
+        fromOnScreen: _countedOnScreen,
+      );
       return;
     }
     if (decoded['type'] != 'keyda:theme') {
@@ -283,7 +510,7 @@ class _KeydaChatPageState extends State<KeydaChatPage> {
     if (!mounted) {
       return;
     }
-    setState(() {
+    _changing(() {
       _isLoading = true;
       _failed = false;
     });
@@ -293,8 +520,41 @@ class _KeydaChatPageState extends State<KeydaChatPage> {
     if (!mounted) {
       return;
     }
-    setState(() {
+    _changing(() {
       _isLoading = false;
+    });
+    if (!_failed) {
+      _startDelivered = true;
+    }
+    // The widget script has run by now; KeydaBot.prefill keeps the question
+    // until the composer exists.
+    final String? waiting = _pendingPrefill;
+    if (waiting != null && !_failed) {
+      _pendingPrefill = null;
+      prefill(waiting);
+    }
+    // Every page finish gets the current visitor, `{}` for none: the first
+    // load's fragment carried the details as they were when it started, a
+    // reload has none, and one set, changed or cleared while the page loaded
+    // has not reached it.
+    _applyVisitor();
+  }
+
+  bool get _canGoBack => _sheets > 0 && !_isLoading && !_failed;
+
+  /// Runs [change] in setState and tells onCanGoBackChanged if it flipped
+  /// [_canGoBack] — the one place, so a load or a failure is reported too.
+  void _changing(VoidCallback change) {
+    final bool was = _canGoBack;
+    setState(change);
+    if (was != _canGoBack) {
+      widget.onCanGoBackChanged?.call(_canGoBack);
+    }
+  }
+
+  void _setSheets(int open) {
+    _changing(() {
+      _sheets = open;
     });
   }
 
@@ -309,7 +569,7 @@ class _KeydaChatPageState extends State<KeydaChatPage> {
     if (!mounted) {
       return;
     }
-    setState(() {
+    _changing(() {
       _failed = true;
       _isLoading = false;
     });
@@ -400,17 +660,74 @@ class _KeydaChatPageState extends State<KeydaChatPage> {
   }
 
   void _retry() {
-    setState(() {
+    _changing(() {
       _failed = false;
       _isLoading = true;
+      _sheets = 0;
     });
-    _controller.loadRequest(widget.chatUrl);
+    _controller.loadRequest(_startUrl());
   }
 
-  void _close() {
-    // maybePop rather than pop: whatever else the host has on the stack is
-    // theirs, and popping blindly could take one of their screens with it.
-    Navigator.of(context).maybePop();
+  /// The close button: leaves whatever the page has open.
+  void _close() => _leave();
+
+  /// Takes this chat off the stack — only while it is the screen on top:
+  /// whatever else the host has on the stack is theirs, and popping blindly
+  /// could take one of their screens with it.
+  void _leave() {
+    _pendingBack?.cancel();
+    _pendingBack = null;
+    if (!mounted) {
+      return;
+    }
+    final ModalRoute<Object?>? route = ModalRoute.of(context);
+    if (route != null && route.isCurrent) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  /// Android back over the chat (rule 10). The page can have a sheet open
+  /// over the conversation — an item over the menu, the cart, a booking — and
+  /// back is the customer closing THAT. The page's `KeydaBot.back()` takes off
+  /// the top sheet and answers whether there was one; only "no", a page too
+  /// old to answer, or no answer in time closes the chat.
+  Future<void> _onBack() async {
+    // Nothing the page drew can be open while it loads or after it failed.
+    if (_failed || _isLoading) {
+      _leave();
+      return;
+    }
+    // A second press while the page is answering the first: that answer
+    // decides.
+    if (_pendingBack != null) {
+      return;
+    }
+    final Timer timeout = Timer(_backAnswerTimeout, _leave);
+    _pendingBack = timeout;
+    bool handled = false;
+    try {
+      final Object result =
+          await _controller.runJavaScriptReturningResult(_backScript);
+      handled = result == true || result.toString() == 'true';
+    } on Object catch (_) {
+      // A page that cannot answer has nothing open that it could close.
+    }
+    if (!identical(_pendingBack, timeout)) {
+      return; // the timeout already decided, or the chat was closed
+    }
+    timeout.cancel();
+    _pendingBack = null;
+    if (!handled) {
+      _leave();
+    }
+  }
+
+  @override
+  void dispose() {
+    _pendingBack?.cancel();
+    keydaVisitor.removeListener(_applyVisitor);
+    _setOnScreen(false);
+    super.dispose();
   }
 
   @override
@@ -424,48 +741,85 @@ class _KeydaChatPageState extends State<KeydaChatPage> {
     final Color background = dark ? _darkBackground : _lightBackground;
     final Color foreground = dark ? Colors.white : const Color(0xFF0B1220);
 
+    final Widget chat = Stack(
+      children: <Widget>[
+        WebViewWidget(controller: _controller),
+        if (_isLoading && !_failed)
+          Center(
+            child: CircularProgressIndicator(color: foreground),
+          ),
+        if (_failed)
+          // Positioned.fill so the panel is given tight constraints and covers
+          // the half-drawn page underneath it, instead of shrinking to its own
+          // text.
+          Positioned.fill(
+            child: _LoadFailed(
+              onRetry: _retry,
+              background: background,
+              foreground: foreground,
+            ),
+          ),
+      ],
+    );
+
+    if (widget.embedded) {
+      // In a screen of the host's: back closes a sheet the chat has open
+      // (the page reports how many), and is the host's own back otherwise —
+      // canPop is true then, so its navigator, predictive back included, is
+      // untouched. No status-bar styling and no insets: the host lays this
+      // out like any other widget.
+      return PopScope<Object?>(
+        // Not while another screen is in front: PopScope speaks for the whole
+        // route, and the sheet it would close is in a chat nobody can see.
+        canPop: !_canGoBack || !widget.focused,
+        onPopInvokedWithResult: (bool didPop, Object? _) {
+          if (!didPop && _canGoBack && widget.focused) {
+            unawaited(
+              _controller
+                  .runJavaScript(
+                    '(function(){try{window.KeydaBot&&window.KeydaBot.back&&window.KeydaBot.back();}catch(e){}})()',
+                  )
+                  .catchError((Object _) {}),
+            );
+          }
+        },
+        child: ColoredBox(color: background, child: chat),
+      );
+    }
+
     // Status-bar icon brightness is the one piece of chrome the Scaffold
     // cannot paint: dark chat, light status-bar text and vice versa. The
     // AnnotatedRegion scopes it to this route, so the host's own status bar
     // style returns the moment the chat is dismissed.
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: dark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
-      child: Scaffold(
-        // Without this the soft keyboard covers the message input: the WebView
-        // keeps its full height, the page never learns the viewport shrank,
-        // and the field it scrolls to sits under the keys.
-        resizeToAvoidBottomInset: true,
-        backgroundColor: background,
-        body: SafeArea(
-          // The page ships viewport-fit=cover and paints its own background to
-          // the edges; these insets keep the input and the close button clear
-          // of a notch, a punch-hole and the home indicator.
-          child: Column(
-            children: <Widget>[
-              _CloseBar(onClose: _close, foreground: foreground),
-              Expanded(
-                child: Stack(
-                  children: <Widget>[
-                    WebViewWidget(controller: _controller),
-                    if (_isLoading && !_failed)
-                      Center(
-                        child: CircularProgressIndicator(color: foreground),
-                      ),
-                    if (_failed)
-                      // Positioned.fill so the panel is given tight
-                      // constraints and covers the half-drawn page underneath
-                      // it, instead of shrinking to its own text.
-                      Positioned.fill(
-                        child: _LoadFailed(
-                          onRetry: _retry,
-                          background: background,
-                          foreground: foreground,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
+    //
+    // PopScope: system back asks the page first (_onBack). canPop stays false
+    // so the route never pops on its own; KeydaBot.dismiss() and the close
+    // button pop it directly.
+    return PopScope<Object?>(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? _) {
+        if (!didPop) {
+          unawaited(_onBack());
+        }
+      },
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: dark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+        child: Scaffold(
+          // Without this the soft keyboard covers the message input: the WebView
+          // keeps its full height, the page never learns the viewport shrank,
+          // and the field it scrolls to sits under the keys.
+          resizeToAvoidBottomInset: true,
+          backgroundColor: background,
+          body: SafeArea(
+            // The page ships viewport-fit=cover and paints its own background to
+            // the edges; these insets keep the input and the close button clear
+            // of a notch, a punch-hole and the home indicator.
+            child: Column(
+              children: <Widget>[
+                _CloseBar(onClose: _close, foreground: foreground),
+                Expanded(child: chat),
+              ],
+            ),
           ),
         ),
       ),

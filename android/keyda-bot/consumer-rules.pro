@@ -8,11 +8,12 @@
 #                                   name. Restating it here would only hide a future mistake -
 #                                   if the activity is ever dropped from the manifest, we want the
 #                                   loud ClassNotFoundException, not a silently kept class.
-#   in.keyda.bot.KeydaBot           Kept by being called from the app's own code.
+#   in.keyda.bot.KeydaBot,          Kept by being called from the app's own code.
+#   in.keyda.bot.KeydaBotView
 #
 # There is no reflection in this SDK and nothing serialized. The one @JavascriptInterface bridge
-# (KeydaBotActivity.ThemeBridge.onTheme, which the hosted page calls as
-# window.KeydaBotNative.onTheme to announce the owner's theme - CONTRACT rule 7) is kept by the
+# (KeydaBotView.Bridge.onTheme, which the hosted page calls as window.KeydaBotNative.onTheme to
+# announce the owner's theme and its open sheets - CONTRACT rules 7 and 10) is kept by the
 # rule below. R8 cannot see calls that arrive from JavaScript, and a stripped bridge method fails
 # only at runtime, in release, in front of a customer: the chat opens, the chrome simply never
 # matches it, and nothing in Logcat says why.
@@ -29,3 +30,8 @@
 # added this SDK.
 -dontwarn android.window.OnBackInvokedCallback
 -dontwarn android.window.OnBackInvokedDispatcher
+
+# The file picker's headless fragment (KeydaBotPickerFragment). Android re-creates a fragment by
+# class name, with its no-argument constructor, when it restores a screen; an app's R8 run that
+# dropped that constructor would crash the restore instead of answering the chat's file request.
+-keep class in.keyda.bot.KeydaBotPickerFragment { public <init>(); }

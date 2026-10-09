@@ -1,5 +1,82 @@
 # Changelog — in.keyda:keyda-bot
 
+
+## 0.2.0 — unreleased
+
+* **The chat inside one of your own screens: `KeydaBotView`.** A plain Android
+  View — from Compose through `AndroidView` — for a Help tab or a support
+  screen. Set `question` before it is shown or call `prefill()` later; with a
+  sheet open in the chat, `canGoBack` is true and `goBack()` closes it
+  (`onCanGoBackChanged` drives an `OnBackPressedCallback`); `destroy()` when the
+  screen is gone. The full-screen chat is now this view inside an Activity, so
+  the two cannot drift apart.
+* **Open with a question:** `KeydaBot.show(activity, "Is this in stock?")` puts
+  it in the message box, unsent. It travels in the URL's #fragment, so it is
+  never in a server log; a second call with the chat open replaces the text.
+* **`KeydaBot.listener`**: `onShow()` and `onDismiss()`, both optional.
+* The file picker now runs through a headless platform fragment in the screen
+  the chat is in, so it works from `KeydaBotView` too, and the read permission
+  for the picked file belongs to that screen.
+
+* **Your signed-in customer:** `KeydaBot.setVisitor(name, phone, email)` and
+  `clearVisitor()`. Offered — never sent — in "talk to a person", an order, a
+  booking and a welcome question for a name, phone or email; the customer
+  submits them. In the URL's #fragment, never in a server log. A value the
+  chat would refuse on submit is dropped whole: a name over 80 characters, a
+  phone outside 8–15 digits, an email without a dot in its domain. A change
+  reaches chats already open, chats still loading or reloading, and an
+  embedded chat that was off its screen when you made it.
+* **A reply while the chat is closed:** `KeydaBot.hasUnreadReply` (from Java,
+  `KeydaBot.hasUnreadReply()`), `Listener.onReply()` and
+  `KeydaBot.checkForReplies()`. Asked when the app comes to the foreground
+  (once a minute at most), only for chats in which the customer asked for a
+  person in the last 14 days; the list is the page's own and kept in
+  `noBackupFilesDir`. A chat loaded out of sight — a background tab, a GONE
+  view — does not count as seen.
+* **`KeydaBotView.active`:** set it false for an embedded chat that is attached
+  and visible but not the one on screen (a ViewPager2 neighbour, a tab that
+  keeps its views visible), so a reply it draws still counts as unread.
+* `Listener`'s methods are real Java default methods: a Java app implements
+  only the one it needs. `KeydaBotView`'s constants are no longer public static
+  fields.
+* `KeydaBotView`: `onCanGoBackChanged(false)` now comes when an error or a
+  crashed renderer closes the page under an open sheet, and after a reload.
+  Retry and `reload()` really load again (they used to be a same-document jump
+  when a question was set), and no longer bring a question the customer already
+  sent back into the box. A `prefill()` while the retry screen is up waits for
+  the next load. Retry works for a view shown before `init()`. A device with no
+  usable WebView gets a message instead of a crash in your screen.
+* Full-screen back with a sheet open has the same half-second limit as
+  everywhere else, so a hung page cannot leave back dead.
+* `show()` right after the customer closes the chat opens a new one (it used
+  to be swallowed by the chat on its way out, or fill its question into it);
+  `onDismiss` comes as the chat starts to close. A screen rebuilt by a
+  configuration change no longer calls `onShow` twice or puts its question
+  back.
+* A question is cut at 500 whole characters, never through an emoji.
+* 0.1.5 was never released; everything prepared for it ships in this version.
+
+* **Back closes what the customer is looking at first.** The chat can have a
+  sheet open over the conversation — an item over the menu, the cart, a
+  booking — and Android's back closed the whole chat from under it. Back now
+  asks the page (`KeydaBot.back()`, CONTRACT rule 10) to close the sheet on
+  top, and closes the chat only when nothing was open. A page from before
+  October 2026 has no `back()` and the chat closes as it always did; a page
+  that does not answer within half a second does too, so back never goes dead.
+* **Built for Android 16:** compileSdk 36, Android Gradle Plugin 9.4.1, Gradle
+  9.8.1, Kotlin 2.4.21. Nothing changes for the app that adds it: still
+  minSdk 21, still no dependency but `kotlin-stdlib`, whose version in the POM
+  stays at 2.1.20, and the AAR still asks for no minimum compileSdk (AGP 9
+  would otherwise have written 36 into it and refused every app compiling
+  against 34 or 35). The Kotlin metadata moves from 1.9 to 2.0 — the oldest
+  the 2.4 compiler writes. A Kotlin app needs a 2.0+ compiler, as it already
+  did for the 2.1.20 stdlib 0.1.2–0.1.4 asked for.
+* Checked in a host app targeting API 36 on an Android 16 phone, an Android 15
+  tablet and an Android 16 tablet, portrait and landscape, light and dark:
+  status bar, navigation bar, keyboard, rotation with text typed, back over
+  one and two open sheets. Also built into an app on AGP 8.9.1 compiling
+  against API 34.
+
 ## 0.1.4 — 2026-09-03
 
 * **The chat's attach button opens a picker** (CONTRACT rule 9). Until now

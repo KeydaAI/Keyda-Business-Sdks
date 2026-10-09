@@ -15,14 +15,23 @@ import PackageDescription
 let package = Package(
     name: "KeydaBot",
     platforms: [
-        // UIKit + WKWebView presented as a sheet. Everything used here exists on iOS 13.
-        .iOS(.v13)
+        // UIKit + WKWebView presented as a sheet. iOS 15: Xcode 27 builds nothing
+        // older (an iOS 13 minimum is an error there, in a CocoaPods build at
+        // least), and the App Store has required Xcode 26, iOS 15 and up, since
+        // April 2026.
+        .iOS(.v15)
     ],
     products: [
         .library(name: "KeydaBot", targets: ["KeydaBot"])
     ],
     targets: [
-        .target(name: "KeydaBot", path: "ios/Sources/KeydaBot"),
+        // The privacy manifest ships inside the package (as a resource bundle),
+        // which is where Xcode's privacy report looks for a dependency's.
+        .target(
+            name: "KeydaBot",
+            path: "ios/Sources/KeydaBot",
+            resources: [.copy("PrivacyInfo.xcprivacy")]
+        ),
         // Pure unit tests over client-id validation, URL building and the
         // stays-in-chat rule — no simulator, no host app. `swift test` runs
         // them on the machine you are sitting at.

@@ -1,0 +1,159 @@
+# Every push and pull request: each package built and tested with its own
+# toolchain, then tools/conformance.sh across all six with every toolchain
+# present. The release workflow calls this one first, so nothing is published
+# from a commit that fails here.
+#
+# Third-party actions are pinned to a commit (the version is in the comment);
+# GitHub's own (actions/*) to a major version.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Android — assemble and lint (JDK 17)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+      # Also checks the Gradle wrapper jar against Gradle's published checksums.
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      # publishToMavenLocal is what JitPack runs on a tag (jitpack.yml): the
+      # sources jar and the POM too, which assemble alone never builds.
+      - run: ./gradlew :keyda-bot:assembleRelease :keyda-bot:lintRelease :keyda-bot:publishToMavenLocal --no-daemon
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-lint
+          path: android/keyda-bot/build/reports/
+          if-no-files-found: ignore
+
+  ios:
+    name: iOS — swift test, Swift 5 and 6 builds, pod lint
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - run: xcodebuild -version
+      - run: swift test
+      # Swift 6 language mode is what a new app gets; Swift 5 is what most
+      # existing apps still build in. The package has to compile in both.
+      - name: iOS Simulator build, Swift 6
+        run: xcodebuild -scheme KeydaBot -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/dd6" SWIFT_VERSION=6 build -quiet
+      - name: iOS Simulator build, Swift 5
+        run: xcodebuild -scheme KeydaBot -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/dd5" SWIFT_VERSION=5 build -quiet
+      # The podspec is installed by URL (CocoaPods trunk is read-only and we
+      # never published there), so its source_files must keep matching
+      # Package.swift. Warnings are the two builds' business above; a
+      # deprecation one Xcode reports and another does not must not fail this.
+      - run: pod lib lint KeydaBot.podspec --allow-warnings
+
+  js:
+    name: React Native and Ionic — versions, types, behaviour
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: One version in every package, README and lockfile
+        run: node tools/release.mjs check
+      - name: Ionic — install, type-check, build
+        working-directory: ionic
+        run: |
+          npm ci --no-audit --no-fund
+          npm run typecheck
+          npm run build
+          npm pack --dry-run
+      # The React Native package ships TypeScript source and installs nothing
+      # itself; its peers are installed here only to type-check against the
+      # current releases, and never written to package.json.
+      - name: React Native — type-check against current react-native and react-native-webview
+        working-directory: react-native
+        run: |
+          npm install --no-save --no-package-lock --ignore-scripts --no-audit --no-fund \
+            typescript@5.9 react react-native react-native-webview @types/react
+          npx tsc -p tsconfig.json
+          npm pack --dry-run
+      - run: node tools/js-conformance.mjs ionic/node_modules/.bin/tsc
+
+  flutter:
+    name: Flutter — analyze, test, publish dry run
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: flutter
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          # Pinned: analyze fails on any new lint, so a new stable must be a
+          # change here, not a red build nobody caused.
+          flutter-version: 3.47.4
+      - run: flutter --version
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      # pub.dev has no unpublish; what the dry run reports is what a release
+      # would be refused for, or stuck with.
+      - run: flutter pub publish --dry-run
+
+  wordpress:
+    name: WordPress — PHP lint and Plugin Check
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write # Plugin Check comments its results on a pull request
+    steps:
+      - uses: actions/checkout@v7
+      - name: php -l on every plugin file
+        run: |
+          php --version
+          find wordpress/keyda-bot -name '*.php' -print0 | xargs -0 -n1 php -l
+      - uses: wordpress/plugin-check-action@10857da14b6c2246d15402b3e69f777edcf8c12e # v1.1.9
+        with:
+          build-dir: wordpress/keyda-bot
+
+  conformance:
+    name: Conformance — all six against one table
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          # Pinned: analyze fails on any new lint, so a new stable must be a
+          # change here, not a red build nobody caused.
+          flutter-version: 3.47.4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.3'
+          tools: none
+      - name: Ionic's TypeScript compiler
+        working-directory: ionic
+        run: npm ci --no-audit --no-fund
+      # --strict: every toolchain is installed above, so a skipped package
+      # means the setup broke, and counts as a failure.
+      - run: bash tools/conformance.sh --strict

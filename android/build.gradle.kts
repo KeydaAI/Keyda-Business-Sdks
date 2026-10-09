@@ -1,8 +1,9 @@
-// Versions are pinned, not ranged. The wrapper in this directory pins Gradle 8.13; AGP 8.9.1
-// requires Gradle 8.11.1 or newer, and Kotlin 2.1.20 is the closest KGP release tested against
-// that Gradle line. Bumping one of the three without checking the other two is how this build
-// starts failing with "Inconsistent JVM-target compatibility" or a KGP/Gradle warning wall.
+// Versions are pinned, not ranged. The wrapper in this directory pins Gradle 9.8.1, which AGP 9.4
+// requires (9.x); AGP 9 compiles Kotlin itself ("built-in Kotlin"), so there is no Kotlin Android
+// plugin to apply - the Kotlin Gradle plugin is listed here only to choose the compiler AGP uses
+// (2.4.21) rather than the older one AGP depends on. Bumping one of the three without checking the
+// other two is how this build starts failing with a version-compatibility wall.
 plugins {
-    id("com.android.library") version "8.9.1" apply false
-    id("org.jetbrains.kotlin.android") version "2.1.20" apply false
+    id("com.android.library") version "9.4.1" apply false
+    id("org.jetbrains.kotlin.android") version "2.4.21" apply false
 }

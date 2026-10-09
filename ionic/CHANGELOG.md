@@ -1,5 +1,46 @@
 # Changelog — @keyda/bot-capacitor
 
+
+## 0.2.0 — unreleased
+
+* **Open with a question:** `KeydaBot.open({ clientId, question })` puts it in
+  the message box, unsent (in the URL's #fragment, never in a server log).
+* The embedded widget's controls (`getEmbeddedWidget()`) are typed with its
+  newer `prefill(question)` and `back()` — route Capacitor's Android
+  `backButton` to `back()` first, so back closes a sheet before it leaves the
+  page.
+* The `?via=capacitor` mark is added only in the native app: the same code
+  built for the web opens an ordinary browser tab, which may be on a shared
+  computer, where a chat kept for a day would show the next person the last
+  one's details.
+
+* **Fixed: `open()` could throw** on a question whose 500th UTF-16 unit was
+  half an emoji (`encodeURIComponent` threw), though it promises to resolve.
+  Cut at 500 whole characters now, and the encoding can no longer throw.
+* **Your signed-in customer, on the embedded widget:**
+  `getEmbeddedWidget()?.setVisitor?.({ name, phone, email })`. Offered — never
+  sent — in the chat's forms; the customer submits them. A value that does not
+  look right is dropped whole, never cut: name 1–80 characters, phone 8–15
+  digits, email up to 254 characters. The full-screen `open()` does not take
+  them: it opens the system browser, which can keep the link — #fragment
+  included — in its history (and Chrome syncs it). Use the embedded widget for
+  that.
+* `open()` keeps what `init()` stored: `open({ question })` after
+  `init(id, stagingUrl)` goes to staging, and `clientId` is optional once
+  `init()` has run.
+* 0.1.5 was never released; everything prepared for it ships in this version.
+
+* **The full-screen chat keeps its conversation.** `open()` shows the chat in
+  the phone's browser sheet, where the page found no sign of an app around it
+  and treated the visit as a website's — whose chat lasts one browser tab. Each
+  `open()` is a new tab, so every open started a new conversation (measured on
+  iOS and Android). `open()` now adds `?via=capacitor` to the chat link and the
+  hosted page keeps the chat for 24 hours, as in every other SDK. `chatUrl()`
+  still returns the bare link. Needs the hosted page from October 2026; an
+  older one ignores the parameter.
+* Checked with Capacitor 8 on iOS and Android, full screen and embedded, phone
+  and tablet.
+
 ## 0.1.4 — 2026-09-03
 
 * No code change. Version aligned with the rest of the Keyda SDKs, which grew

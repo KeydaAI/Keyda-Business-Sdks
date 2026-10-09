@@ -6,4 +6,4 @@
 /// answers its file chooser from one that does not. `test/sdk_version_test.dart`
 /// fails the moment this and the pubspec disagree, which is the only way two
 /// copies of a version stay honest.
-const String kKeydaSdkVersion = '0.1.4';
+const String kKeydaSdkVersion = '0.2.0';
